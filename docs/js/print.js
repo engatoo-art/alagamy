@@ -218,6 +218,41 @@ export function cashDoc(cd, s, size = 'A4') {
     <div class="sign"><div>المحاسب</div><div>المدير</div><div></div></div></div>`, { size: 'A4', title: 'العهدة' });
 }
 
+// ---------- تقرير عهدة محاسب ----------
+export function shiftDoc(r, size = '80mm') {
+  const s = r.settings; const closed = r.status === 'closed';
+  const tin = closed ? r.total_in : r.live_in, tout = closed ? r.total_out : r.live_out;
+  const exp = closed ? r.expected_amount : n(r.opening_amount) + n(tin) - n(tout);
+  const d = n(r.difference);
+  const when = (ts) => ts ? new Date(ts).toLocaleString('en-GB', { timeZone: 'Africa/Cairo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+  const summary = `<table class="tot">
+      <tr><td>رصيد أول العهدة</td><td class="l">${m(r.opening_amount)}</td></tr>
+      <tr><td>دخل</td><td class="l">${m(tin)}</td></tr>
+      <tr><td>خرج</td><td class="l">${m(tout)}</td></tr>
+      <tr class="g"><td>المفروض يكون في الدرج</td><td class="l">${m(exp)}</td></tr>
+      ${closed ? `<tr><td>الفعلي</td><td class="l"><b>${m(r.counted_amount)}</b></td></tr>
+      <tr><td>${d < 0 ? 'عجز' : d > 0 ? 'زيادة' : 'الفرق'}</td><td class="l"><b>${d ? m(Math.abs(d)) : 'مظبوطة'}</b></td></tr>` : ''}
+    </table>`;
+  const cats = r.by_category.filter((c) => !['shift_short', 'shift_over'].includes(c.category));
+  if (size === '80mm') {
+    return printDoc(`<div class="r80">${head80(s, 'تقرير عهدة')}
+      <table class="meta" style="margin-top:6px"><tr><td>المحاسب: <b>${esc(r.user_name)}</b></td><td class="l">رقم <span class="num">${r.id}</span></td></tr>
+      <tr><td>من: ${when(r.opened_at)}</td><td class="l">إلى: ${closed ? when(r.closed_at) : 'لسه مفتوحة'}</td></tr></table>
+      <div style="margin-top:6px">${summary}</div>
+      <table class="items" style="margin-top:6px"><tbody>${cats.map((c) => `<tr><td>${c.direction === 'in' ? 'دخل' : 'خرج'}: ${CASH_CAT[c.category] || c.category} (${c.count})</td><td class="l">${m(c.total)}</td></tr>`).join('')}</tbody></table>
+      ${r.notes ? `<p style="font-size:12px">${esc(r.notes)}</p>` : ''}
+      <div class="foot">توقيع المحاسب: ..................<br>توقيع المستلم: ..................</div></div>`, { title: 'عهدة ' + r.id });
+  }
+  printDoc(`<div class="a4">${headA4(s, 'تقرير عهدة', r.id, esc(r.user_name))}
+    <table class="meta"><tr><td>فتحها: ${when(r.opened_at)}</td><td class="l">قفلها: ${closed ? when(r.closed_at) + ' — ' + esc(r.closed_by_name || '') : 'لسه مفتوحة'}</td></tr></table>
+    <div style="width:55%;margin:10px 0">${summary}</div>
+    <table class="d"><thead><tr><th>الوقت</th><th>النوع</th><th>البيان</th><th>دخل</th><th>خرج</th></tr></thead>
+    <tbody>${r.movements.map((x) => `<tr><td>${x.time}</td><td>${CASH_CAT[x.category] || x.category}</td><td>${esc(x.description)}</td>
+      <td>${x.direction === 'in' ? m(x.amount) : ''}</td><td>${x.direction === 'out' ? m(x.amount) : ''}</td></tr>`).join('')}</tbody></table>
+    ${r.notes ? `<p>ملاحظات: ${esc(r.notes)}</p>` : ''}
+    <div class="sign"><div>المحاسب: ${esc(r.user_name)}</div><div>المستلم</div><div>المدير</div></div></div>`, { size: 'A4', title: 'عهدة ' + r.id });
+}
+
 // ---------- التقارير ----------
 export function reportDoc(r, s, title) {
   const sl = r.sales;

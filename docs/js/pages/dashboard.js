@@ -2,7 +2,7 @@ import { api } from '../api.js';
 import { esc, money, icon, dateLong, n, tag, PAY, emptyState, dateT } from '../ui.js';
 
 export async function render({ app, el }) {
-  const d = await api.rpc('dashboard');
+  const [d, cs] = await Promise.all([api.rpc('dashboard'), api.rpc('current_shift')]);
   app.setPending(d.pending);
   const max = Math.max(1, ...d.week.map((w) => n(w.total)));
   const lastBackup = localStorage.getItem('last_backup');
@@ -15,6 +15,9 @@ export async function render({ app, el }) {
     <div class="sub">${dateLong(d.today)}</div>
   </div>
 
+  ${cs.shift ? (cs.mine ? `<div class="alert info" style="margin-bottom:14px">عهدتك مفتوحة — المفروض في الدرج دلوقتي <b>${money(n(cs.shift.opening_amount) + n(cs.shift.live_in) - n(cs.shift.live_out))}</b>. <a href="#/cash">العهدة</a></div>`
+      : `<div class="alert info" style="margin-bottom:14px">العهدة مفتوحة باسم <b>${esc(cs.shift.user_name)}</b>. <a href="#/cash">العهدة</a></div>`)
+    : `<div class="alert warn" style="margin-bottom:14px">مفيش عهدة مفتوحة. أي محاسب هيبيع نقدي أو يحصّل لازم يفتح عهدته الأول. <a href="#/cash">افتح العهدة</a></div>`}
   ${d.pending ? `<div class="alert warn" style="margin-bottom:14px">فيه <b>${d.pending}</b> طلب مستني موافقتك. <a href="#/approvals">افتح الموافقات</a></div>` : ''}
   ${needBackup ? `<div class="alert info" style="margin-bottom:14px">بقالك أكتر من أسبوع من غير نسخة احتياطية Excel. <a href="#/settings?tab=backup">نزّل نسخة دلوقتي</a></div>` : ''}
 

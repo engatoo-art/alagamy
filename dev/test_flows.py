@@ -47,6 +47,10 @@ expect_error(acc, "dashboard", {}, "مش متفعل")
 perms = {k: True for k in ["sales", "customers", "collections", "suppliers", "settlements", "cash", "payouts"]}
 call(admin, "save_user", {"id": acc, "active": True, "perms": perms})
 ok("المدير فعّل المحاسب وإداله صلاحيات")
+expect_error(acc, "add_cash", {"direction": "in", "category": "funding", "amount": 10, "description": "x"}, "افتح عهدتك")
+sh = call(acc, "open_shift")
+assert float(sh["opening_amount"]) == 0
+ok("المحاسب فتح عهدته")
 expect_error(acc, "save_settings", {"shop_name": "x"}, "صلاحية")
 expect_error(admin, "save_user", {"id": admin, "role": "accountant"}, "مينفعش")
 
@@ -168,4 +172,24 @@ for fn, p in [("list_customers", {}), ("list_customers", {"only_debt": True}), (
               ("list_users", {}), ("pending_approvals", {})]:
     call(admin, fn, p)
 ok("كل دوال العرض شغالة")
+
+# قفل العهدة بعجز 100 واستلام العهدة التالية
+call(acc, "add_cash", {"direction": "in", "category": "funding", "amount": 10000, "description": "تمويل"})
+cur = call(acc, "current_shift")
+exp = float(cur["shift"]["opening_amount"]) + float(cur["shift"]["live_in"]) - float(cur["shift"]["live_out"])
+mate = new_user("mona", "منى")
+call(admin, "save_user", {"id": mate, "active": True, "perms": {"sales": True, "collections": True}})
+expect_error(mate, "open_shift", {}, "مفتوحة باسم")
+expect_error(mate, "add_payment", {"customer_id": cust["id"], "amount": 5}, "مفتوحة دلوقتي باسم")
+rep = call(acc, "close_shift", {"counted": exp - 100, "notes": "تسليم"})
+assert float(rep["expected_amount"]) == exp and float(rep["difference"]) == -100, rep
+ok(f"العهدة اتقفلت: المفروض {exp} والفعلي {exp-100} — عجز 100")
+nxt = call(mate, "open_shift")
+assert float(nxt["opening_amount"]) == exp - 100, nxt["opening_amount"]
+ok(f"منى فتحت عهدتها بنفس الفلوس اللي اتسلمت: {nxt['opening_amount']}")
+call(mate, "add_payment", {"customer_id": cust["id"], "amount": 50})
+assert len(call(admin, "list_shifts")) == 2 and len(call(mate, "list_shifts")) == 1
+call(admin, "shift_report", {"id": rep["id"]})
+expect_error(mate, "shift_report", {"id": rep["id"]}, "عهدة محاسب تاني")
+ok("سجل العهد والصلاحيات مظبوطين")
 print("\nكل الاختبارات نجحت ✔")

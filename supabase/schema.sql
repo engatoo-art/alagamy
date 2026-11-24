@@ -38,9 +38,10 @@ create table if not exists public.crate_types (
   deposit numeric(12,2) not null default 0 check (deposit >= 0),
   active boolean not null default true
 );
-insert into public.crate_types(name, deposit) values
-  ('صندوق بلاستيك كبير', 50), ('صندوق بلاستيك صغير', 30), ('صندوق خشب (بدون رهن)', 0)
-on conflict (name) do nothing;
+-- الأنواع الافتراضية بتتضاف أول مرة بس
+insert into public.crate_types(name, deposit)
+select * from (values ('صندوق بلاستيك كبير', 50), ('صندوق بلاستيك صغير', 30), ('صندوق خشب (بدون رهن)', 0)) v(name, deposit)
+where not exists (select 1 from public.crate_types);
 
 create table if not exists public.items (
   id serial primary key,
@@ -205,6 +206,26 @@ create table if not exists public.cash_movements (
   created_by uuid references public.profiles(id)
 );
 
+-- عهدة كل محاسب: بتتفتح وتتقفل، والعهدة اللي بعدها بتبدأ بنفس الفلوس
+create table if not exists public.cash_shifts (
+  id serial primary key,
+  user_id uuid not null references public.profiles(id),
+  opened_at timestamptz not null default now(),
+  opening_amount numeric(14,2) not null default 0,
+  status text not null default 'open' check (status in ('open','closed')),
+  closed_at timestamptz,
+  closed_by uuid references public.profiles(id),
+  total_in numeric(14,2) not null default 0,
+  total_out numeric(14,2) not null default 0,
+  expected_amount numeric(14,2) not null default 0,
+  counted_amount numeric(14,2),
+  difference numeric(14,2) not null default 0,
+  notes text not null default ''
+);
+create unique index if not exists ux_one_open_shift on public.cash_shifts((true)) where status = 'open';
+alter table public.cash_movements add column if not exists shift_id int references public.cash_shifts(id);
+create index if not exists ix_cash_shift on public.cash_movements(shift_id);
+
 create index if not exists ix_sales_date on public.sales(sale_date);
 create index if not exists ix_sales_customer on public.sales(customer_id);
 create index if not exists ix_lines_sale on public.sale_lines(sale_id);
@@ -295,14 +316,31 @@ language sql stable security definer set search_path = public as $$
   from cash_movements where mv_date <= upto
 $$;
 
+create or replace function public._open_shift_for_me() returns int
+language plpgsql security definer set search_path = public as $$
+declare sh cash_shifts;
+begin
+  select * into sh from cash_shifts where status = 'open' limit 1;
+  if not found then
+    if _has('approve') then return null; end if;
+    raise exception 'مفيش عهدة مفتوحة — افتح عهدتك الأول من صفحة العهدة';
+  end if;
+  if sh.user_id <> auth.uid() and not _has('approve') then
+    raise exception 'العهدة مفتوحة دلوقتي باسم % — لازم تتقفل الأول وبعدين تفتح عهدتك', _uname(sh.user_id);
+  end if;
+  return sh.id;
+end $$;
+
 create or replace function public._cash(dir text, amt numeric, cat text, descr text, party text,
                                         rtype text, rid int, d date default null) returns void
 language plpgsql security definer set search_path = public as $$
+declare sid int;
 begin
   if amt is null or amt <= 0 then return; end if;
-  insert into cash_movements(mv_date, direction, amount, category, description, party, ref_type, ref_id, created_by)
+  sid := _open_shift_for_me();
+  insert into cash_movements(mv_date, direction, amount, category, description, party, ref_type, ref_id, created_by, shift_id)
   values (coalesce(d, cairo_today()), dir, round(amt, 2), cat, coalesce(descr, ''), coalesce(party, ''),
-          coalesce(rtype, ''), rid, auth.uid());
+          coalesce(rtype, ''), rid, auth.uid(), sid);
 end $$;
 
 create or replace function public._shipitem_sold(siid int) returns numeric
@@ -1140,8 +1178,8 @@ begin
   if dir not in ('in', 'out') then raise exception 'اختار وارد أو منصرف'; end if;
   if amt <= 0 then raise exception 'اكتب المبلغ'; end if;
   if _t(p, 'description') = '' then raise exception 'اكتب البيان'; end if;
-  insert into cash_movements(direction, amount, category, description, party, ref_type, created_by)
-  values (dir, amt, cat, _t(p, 'description'), _t(p, 'party'), 'manual', auth.uid()) returning id into mid;
+  insert into cash_movements(direction, amount, category, description, party, ref_type, created_by, shift_id)
+  values (dir, amt, cat, _t(p, 'description'), _t(p, 'party'), 'manual', auth.uid(), _open_shift_for_me()) returning id into mid;
   return jsonb_build_object('id', mid, 'balance', _cash_balance(cairo_today()),
     'movement', (select to_jsonb(m) || jsonb_build_object('by', _uname(m.created_by)) from cash_movements m where id = mid));
 end $$;
@@ -1167,6 +1205,113 @@ begin
         'party', m.party, 'ref_type', m.ref_type, 'ref_id', m.ref_id, 'by', _uname(m.created_by)) order by m.created_at, m.id), '[]')
       from cash_movements m where m.mv_date between d1 and d2)
   );
+end $$;
+
+-- ========================= عهد المحاسبين =============================
+
+create or replace function public._shift_json(sid int) returns jsonb
+language sql stable security definer set search_path = public as $$
+  select to_jsonb(sh) || jsonb_build_object(
+    'user_name', _uname(sh.user_id), 'closed_by_name', _uname(sh.closed_by),
+    'live_in', coalesce((select sum(amount) from cash_movements where shift_id = sh.id and direction = 'in'
+                         and category <> 'shift_over'), 0),
+    'live_out', coalesce((select sum(amount) from cash_movements where shift_id = sh.id and direction = 'out'
+                          and category <> 'shift_short'), 0),
+    'count', (select count(*) from cash_movements where shift_id = sh.id))
+  from cash_shifts sh where sh.id = sid
+$$;
+
+create or replace function public.current_shift(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare sid int; last_id int;
+begin
+  perform _need(null);
+  select id into sid from cash_shifts where status = 'open' limit 1;
+  select id into last_id from cash_shifts where status = 'closed' order by closed_at desc limit 1;
+  return jsonb_build_object(
+    'shift', case when sid is null then null else _shift_json(sid) end,
+    'last', case when last_id is null then null else _shift_json(last_id) end,
+    'cash_balance', _cash_balance(date '2999-12-31'),
+    'mine', sid is not null and (select user_id from cash_shifts where id = sid) = auth.uid()
+  );
+end $$;
+
+create or replace function public.open_shift(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare sid int;
+begin
+  perform _need_any(array['sales','cash','collections','payouts']);
+  if exists (select 1 from cash_shifts where status = 'open') then
+    raise exception 'فيه عهدة مفتوحة باسم % — لازم تتقفل الأول',
+      (select _uname(user_id) from cash_shifts where status = 'open' limit 1);
+  end if;
+  insert into cash_shifts(user_id, opening_amount, notes)
+  values (auth.uid(), _cash_balance(date '2999-12-31'), _t(p, 'notes')) returning id into sid;
+  return _shift_json(sid);
+end $$;
+
+create or replace function public.close_shift(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare sh cash_shifts; tin numeric; tout numeric; expected numeric; counted numeric; diff numeric;
+begin
+  perform _need(null);
+  select * into sh from cash_shifts where status = 'open' for update;
+  if not found then raise exception 'مفيش عهدة مفتوحة'; end if;
+  if sh.user_id <> auth.uid() and not _has('approve') then
+    raise exception 'العهدة دي باسم % — هو أو المدير بس اللي يقفلها', _uname(sh.user_id);
+  end if;
+  select coalesce(sum(amount) filter (where direction = 'in'), 0), coalesce(sum(amount) filter (where direction = 'out'), 0)
+    into tin, tout from cash_movements where shift_id = sh.id;
+  expected := sh.opening_amount + tin - tout;
+  counted := case when nullif(trim(p->>'counted'), '') is null then expected else round(_n(p, 'counted'), 2) end;
+  if counted < 0 then raise exception 'المبلغ الفعلي مينفعش يبقى بالسالب'; end if;
+  diff := counted - expected;
+  -- العجز أو الزيادة بيتسجلوا علشان رصيد العهدة الجديدة يبقى نفس الفلوس اللي اتسلّمت فعلًا
+  if diff < 0 then
+    insert into cash_movements(direction, amount, category, description, ref_type, ref_id, created_by, shift_id)
+    values ('out', -diff, 'shift_short', 'عجز في عهدة ' || _uname(sh.user_id), 'shift', sh.id, auth.uid(), sh.id);
+  elsif diff > 0 then
+    insert into cash_movements(direction, amount, category, description, ref_type, ref_id, created_by, shift_id)
+    values ('in', diff, 'shift_over', 'زيادة في عهدة ' || _uname(sh.user_id), 'shift', sh.id, auth.uid(), sh.id);
+  end if;
+  update cash_shifts set status = 'closed', closed_at = now(), closed_by = auth.uid(),
+    total_in = tin, total_out = tout, expected_amount = expected, counted_amount = counted, difference = diff,
+    notes = case when _t(p, 'notes') <> '' then _t(p, 'notes') else notes end
+  where id = sh.id;
+  return shift_report(jsonb_build_object('id', sh.id));
+end $$;
+
+create or replace function public.shift_report(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare sid int := _i(p, 'id'); r jsonb;
+begin
+  perform _need(null);
+  r := _shift_json(sid);
+  if r is null then raise exception 'العهدة غير موجودة'; end if;
+  if (r->>'user_id')::uuid <> auth.uid() and not _has('cash') and not _has('reports') then
+    raise exception 'مش عندك صلاحية تشوف عهدة محاسب تاني';
+  end if;
+  return r || jsonb_build_object(
+    'by_category', (select coalesce(jsonb_agg(jsonb_build_object('direction', direction, 'category', category, 'total', total, 'count', cnt)
+                    order by direction, total desc), '[]')
+                    from (select direction, category, sum(amount) total, count(*) cnt from cash_movements
+                          where shift_id = sid group by direction, category) g),
+    'movements', (select coalesce(jsonb_agg(jsonb_build_object(
+        'id', m.id, 'date', m.mv_date, 'time', to_char(m.created_at at time zone 'Africa/Cairo', 'HH24:MI'),
+        'direction', m.direction, 'amount', m.amount, 'category', m.category, 'description', m.description,
+        'ref_type', m.ref_type, 'ref_id', m.ref_id, 'by', _uname(m.created_by)) order by m.created_at, m.id), '[]')
+      from cash_movements m where m.shift_id = sid),
+    'settings', (select to_jsonb(x) from shop_settings x where id = 1));
+end $$;
+
+create or replace function public.list_shifts(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  perform _need(null);
+  return (select coalesce(jsonb_agg(_shift_json(sh.id) order by sh.opened_at desc), '[]')
+          from cash_shifts sh
+          where (sh.opened_at at time zone 'Africa/Cairo')::date between _d(p, 'from', cairo_today() - 30) and _d(p, 'to')
+            and (sh.user_id = auth.uid() or _has('cash') or _has('reports')));
 end $$;
 
 -- ============================ التقارير ================================
@@ -1292,7 +1437,8 @@ begin
     'customer_payments', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from customer_payments x),
     'crate_returns', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from crate_returns x),
     'settlements', (select coalesce(jsonb_agg(to_jsonb(x) - 'details' order by id), '[]') from settlements x),
-    'cash_movements', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from cash_movements x)
+    'cash_movements', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from cash_movements x),
+    'cash_shifts', (select coalesce(jsonb_agg(to_jsonb(x) || jsonb_build_object('user_name', _uname(x.user_id)) order by id), '[]') from cash_shifts x)
   );
 end $$;
 
@@ -1303,7 +1449,8 @@ do $$
 declare t text;
 begin
   foreach t in array array['profiles','shop_settings','crate_types','items','suppliers','customers','settlements',
-                           'shipments','shipment_items','sales','sale_lines','customer_payments','crate_returns','cash_movements']
+                           'shipments','shipment_items','sales','sale_lines','customer_payments','crate_returns','cash_movements',
+                           'cash_shifts']
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from anon, authenticated', t);
@@ -1323,7 +1470,9 @@ grant execute on function
   public.get_settlement(jsonb), public.create_settlement(jsonb), public.list_settlements(jsonb),
   public.decide_settlement(jsonb), public.pay_settlement(jsonb), public.pending_approvals(jsonb), public.decide_sale(jsonb),
   public.decide_customer_credit(jsonb), public.add_cash(jsonb), public.cash_day(jsonb), public.dashboard(jsonb),
-  public.report_period(jsonb), public.report_debts(jsonb), public.export_all(jsonb)
+  public.report_period(jsonb), public.report_debts(jsonb), public.export_all(jsonb),
+  public.current_shift(jsonb), public.open_shift(jsonb), public.close_shift(jsonb), public.shift_report(jsonb),
+  public.list_shifts(jsonb)
 to authenticated;
 
 -- تم ✔

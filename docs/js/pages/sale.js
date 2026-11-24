@@ -8,7 +8,8 @@ import { customerForm } from './customers.js';
 
 // ======================= بيع جديد =======================
 export async function renderNew({ app, el, query }) {
-  const [stock, customers] = await Promise.all([api.rpc('available_stock'), api.rpc('list_customers')]);
+  const [stock, customers, cs] = await Promise.all([api.rpc('available_stock'), api.rpc('list_customers'), api.rpc('current_shift')]);
+  const shiftOk = cs.mine || (app.can('approve') && !cs.shift);
   const S = {
     customer: customers.find((c) => String(c.id) === query.customer) || null,
     walkIn: '', payment: 'cash', paid: '', discount: '', notes: '', lines: [],
@@ -26,6 +27,7 @@ export async function renderNew({ app, el, query }) {
 
   el.innerHTML = `
   <div class="page-head"><h1>بيع جديد</h1><a class="btn" href="#/sales">${icon('receipt')} الفواتير</a></div>
+  ${shiftOk ? '' : `<div class="alert warn" style="margin-bottom:14px">${cs.shift ? `العهدة مفتوحة باسم <b>${esc(cs.shift.user_name)}</b>. البيع النقدي والمدفوع مقدم بيتسجل على عهدة المحاسب اللي فاتحها، فلازم يقفلها وانت تفتح عهدتك.` : 'مفيش عهدة مفتوحة. البيع النقدي محتاج عهدة.'} <a href="#/cash">افتح العهدة</a></div>`}
   <div class="sale-grid">
     <div class="panel"><div class="pb">
       <div class="row" style="align-items:flex-end">
