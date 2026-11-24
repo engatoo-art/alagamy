@@ -50,6 +50,11 @@ http.createServer(async (req, res) => {
       const fn = req.url.replace('/dev/rpc/', '');
       return send(res, 200, { data: await rpc(fn, j.uid, j.p) });
     }
+    if (req.url.split('?')[0] === '/js/config.js') {
+      // في التجربة المحلية بنشيل بيانات Supabase علشان البرنامج يكلم السيرفر ده
+      res.writeHead(200, { 'Content-Type': 'text/javascript' });
+      return res.end("export const CONFIG = { SUPABASE_URL: '', SUPABASE_ANON_KEY: '', EMAIL_DOMAIN: 'alagamy.app' };");
+    }
     let f = path.join(ROOT, decodeURIComponent(req.url.split('?')[0]));
     if (f.endsWith('/')) f += 'index.html';
     if (!f.startsWith(ROOT) || !fs.existsSync(f)) { res.writeHead(404); return res.end('not found'); }

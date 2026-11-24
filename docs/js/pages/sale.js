@@ -15,12 +15,12 @@ export async function renderNew({ app, el, query }) {
   };
   let key = 0;
   const crateOpts = app.crate_types.filter((c) => c.active);
-  const stockKeys = new Set(stock.map((s) => s.item_id));
-  const other = app.items.filter((i) => i.active && !stockKeys.has(i.id));
-  const pickables = () => [
-    ...stock.map((s) => ({ kind: 'stock', ...s, label: `${s.item} — ${s.supplier}` })),
-    ...other.map((i) => ({ kind: 'item', item_id: i.id, item: i.name, default_unit: i.default_unit, label: i.name })),
-  ];
+  const items = stock.map((s) => ({ kind: 'stock', ...s, label: `${s.item} — ${s.supplier}` }));
+  // الكمية المحجوزة من نفس سطر النقلة في باقي سطور الفاتورة
+  const usedElsewhere = (si, L) => S.lines.filter((x) => x !== L && x.pick?.shipment_item_id === si).reduce((a, x) => a + n(x.qty), 0);
+  const left = (p, L) => n(p.remaining) - usedElsewhere(p.shipment_item_id, L);
+  // الأصناف اللي لسه ليها باقي بس، واللي عدده خلص بيختفي
+  const pickables = (L) => items.filter((p) => left(p, L) > 0);
   const newLine = () => ({ key: ++key, pick: null, unit: 'kg', qty: '', weight: '', price: '', crate_type_id: '', crates: '' });
   S.lines.push(newLine());
 
@@ -35,6 +35,7 @@ export async function renderNew({ app, el, query }) {
         <div class="seg credit" id="pay"><button data-v="cash" class="on">نقدي</button><button data-v="credit">آجل</button></div>
       </div>
       <div id="custBox"></div>
+      ${items.length ? '' : `<div class="alert warn" style="margin-top:14px">مفيش بضاعة متاحة للبيع دلوقتي. سجّل نقلة واردة من مورد الأول${app.can('suppliers') ? ' — <a href="#/shipments/new">نقلة جديدة</a>' : ''}.</div>`}
       <div class="tbl-wrap" style="margin-top:16px">
         <table class="lines"><thead><tr>
           <th style="min-width:200px">الصنف</th><th>البيع</th><th>العدد</th><th>الوزن (ك)</th><th>السعر</th>
@@ -139,8 +140,8 @@ export async function renderNew({ app, el, query }) {
       <td><button class="btn ghost sm x" data-del title="شيل السطر">✕</button></td>`;
     const pickIn = tr.querySelector('[data-f=pick]');
     combo(pickIn, {
-      items: pickables, label: (p) => p.label,
-      sub: (p) => p.kind === 'stock' ? `باقي ${qtyT(p.remaining)} — ${dateT(p.ship_date)}` : 'مش من نقلة',
+      items: () => pickables(L), label: (p) => p.label,
+      sub: (p) => `باقي ${qtyT(left(p, L))} — ${dateT(p.ship_date)}`,
       onPick: (p) => { L.pick = p; L.unit = p.default_unit || 'kg'; syncUnit(); recalc(); tr.querySelector('[data-f=qty]').focus(); },
     });
     pickIn.addEventListener('input', () => { if (L.pick && pickIn.value !== L.pick.label) { L.pick = null; recalc(); } });
@@ -209,11 +210,12 @@ export async function renderNew({ app, el, query }) {
       if (tr) {
         tr.querySelector('[data-amt]').textContent = moneyT(a);
         const rem = tr.querySelector('[data-rem]');
-        if (L.pick?.kind === 'stock') {
-          const over = n(L.qty) > n(L.pick.remaining);
-          rem.innerHTML = `${esc(L.pick.supplier)} — باقي <b class="${over ? 't-out' : ''}">${qtyT(L.pick.remaining)}</b>`;
+        if (L.pick) {
+          const avail = left(L.pick, L);
+          const over = n(L.qty) > avail;
+          rem.innerHTML = `${esc(L.pick.supplier)} — باقي <b class="${over ? 't-out' : ''}">${qtyT(avail)}</b>`;
           if (over) warns.push(`${L.pick.item}: العدد أكبر من الباقي في النقلة`);
-        } else rem.textContent = L.pick ? 'مش من نقلة' : '';
+        } else rem.textContent = '';
       }
       if (lineDep(L) > 0 && !S.customer) warns.push('رهن الصناديق لازم يكون لزبون مسجل');
     });
@@ -242,6 +244,10 @@ export async function renderNew({ app, el, query }) {
     if (!lines.length) throw new Error('ضيف صنف واحد على الأقل');
     const bad = lines.find((L) => !L.pick);
     if (bad) throw new Error('اختار الصنف من القائمة في كل سطر');
+    const noQty = lines.find((L) => n(L.qty) <= 0);
+    if (noQty) throw new Error(`اكتب العدد لـ ${noQty.pick.item} علشان يتخصم من النقلة`);
+    const over = lines.find((L) => n(L.qty) > left(L.pick, L));
+    if (over) throw new Error(`عدد ${over.pick.item} أكبر من الباقي في النقلة (${qtyT(left(over.pick, over))})`);
     const payload = {
       customer_id: S.customer?.id || null,
       customer_name: S.customer ? '' : S.walkIn,
@@ -250,7 +256,7 @@ export async function renderNew({ app, el, query }) {
       discount: n($('#disc').value),
       notes: $('#notes').value.trim(),
       lines: lines.map((L) => ({
-        shipment_item_id: L.pick.kind === 'stock' ? L.pick.shipment_item_id : null,
+        shipment_item_id: L.pick.shipment_item_id,
         item_id: L.pick.item_id, unit: L.unit, qty: n(L.qty), weight: n(L.weight), price: n(L.price),
         crate_type_id: L.crate_type_id || null, crates: n(L.crates),
       })),
