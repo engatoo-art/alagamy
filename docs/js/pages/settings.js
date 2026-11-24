@@ -161,14 +161,22 @@ const SHEETS = {
   users: ['المستخدمين', { username: 'اسم الدخول', full_name: 'الاسم', role: 'النوع', active: 'شغال', created_at: 'تاريخ الإنشاء' }],
 };
 
-function loadXLSX() {
-  if (window.XLSX) return Promise.resolve(window.XLSX);
+function loadScript(src) {
   return new Promise((res, rej) => {
     const s = document.createElement('script');
-    s.src = 'https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js';
-    s.onload = () => res(window.XLSX); s.onerror = () => rej(new Error('مش قادر أحمّل أداة Excel — اتأكد من النت'));
+    s.src = src; s.onload = res; s.onerror = rej;
     document.head.append(s);
   });
+}
+// أداة Excel: من نسخة جوه البرنامج لو موجودة، وإلا من النت
+async function loadXLSX() {
+  if (window.XLSX) return window.XLSX;
+  try { await loadScript('js/vendor/xlsx.full.min.js'); }
+  catch {
+    try { await loadScript('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'); }
+    catch { throw new Error('مش قادر أحمّل أداة Excel — اتأكد من النت'); }
+  }
+  return window.XLSX;
 }
 
 async function backup(app, body) {

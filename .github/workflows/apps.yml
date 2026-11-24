@@ -1,0 +1,93 @@
+name: Build desktop and mobile apps
+
+on:
+  push:
+    branches: [main]
+    paths: ['docs/**', 'apps/**', '.github/workflows/apps.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  vendor:
+    # نسخة من المكتبات جوه البرنامج علشان التطبيقات ما تعتمدش على مواقع تانية
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - name: Bundle libraries
+        run: |
+          mkdir -p /tmp/v && cd /tmp/v
+          npm init -y >/dev/null
+          npm i @supabase/supabase-js@2 esbuild >/dev/null
+          echo "export * from '@supabase/supabase-js';" > entry.js
+          npx esbuild entry.js --bundle --format=esm --platform=browser --minify --outfile=supabase.js
+          curl -fsSL https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js -o xlsx.full.min.js
+          mkdir -p $GITHUB_WORKSPACE/docs/js/vendor
+          cp supabase.js xlsx.full.min.js $GITHUB_WORKSPACE/docs/js/vendor/
+      - uses: actions/upload-artifact@v4
+        with: { name: site, path: docs }
+
+  windows:
+    needs: vendor
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: site, path: docs }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - name: Build Alagamy.exe
+        run: dotnet publish apps/windows/Alagamy.csproj -c Release -o out
+      - uses: actions/upload-artifact@v4
+        with: { name: windows, path: out/Alagamy.exe }
+
+  android:
+    needs: vendor
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with: { name: site, path: docs }
+      - uses: actions/setup-node@v4
+        with: { node-version: 20 }
+      - uses: actions/setup-java@v4
+        with: { distribution: temurin, java-version: '21' }
+      - name: Build APK
+        run: |
+          mkdir mobile && cd mobile
+          npm init -y >/dev/null
+          npm i @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 >/dev/null
+          cp -r ../docs www && rm -f www/.nojekyll
+          cat > capacitor.config.json <<'JSON'
+          { "appId": "com.alagamy.accounts", "appName": "العجمي", "webDir": "www",
+            "android": { "backgroundColor": "#f4f6f1" } }
+          JSON
+          npx cap add android
+          # أيقونة البرنامج
+          mkdir -p assets && convert ../docs/img/icon-512.png -resize 1024x1024 assets/icon-only.png || true
+          cp assets/icon-only.png assets/icon-foreground.png 2>/dev/null || true
+          convert -size 1024x1024 xc:'#154d31' assets/icon-background.png || true
+          npx --yes @capacitor/assets@3 generate --android || echo "icon generation skipped"
+          npx cap sync android
+          cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon -q
+          cp app/build/outputs/apk/debug/app-debug.apk $GITHUB_WORKSPACE/Alagamy.apk
+      - uses: actions/upload-artifact@v4
+        with: { name: android, path: Alagamy.apk }
+
+  release:
+    needs: [windows, android]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with: { path: dl }
+      - name: Publish download links
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest -y --cleanup-tag -R ${{ github.repository }} || true
+          gh release create latest dl/windows/Alagamy.exe dl/android/Alagamy.apk -R ${{ github.repository }} \
+            --title "العجمي — آخر نسخة" \
+            --notes "برنامج الويندوز (Alagamy.exe) وتطبيق الأندرويد (Alagamy.apk). بيتحدثوا لوحدهم مع كل تعديل."
