@@ -67,10 +67,8 @@ jobs:
           JSON
           npx cap add android
           # أيقونة البرنامج
-          mkdir -p assets && convert ../docs/img/icon-512.png -resize 1024x1024 assets/icon-only.png || true
-          cp assets/icon-only.png assets/icon-foreground.png 2>/dev/null || true
-          convert -size 1024x1024 xc:'#154d31' assets/icon-background.png || true
-          npx --yes @capacitor/assets@3 generate --android || echo "icon generation skipped"
+          cp -r ../apps/android/assets assets
+          npx --yes @capacitor/assets@3 generate --android --iconBackgroundColor '#154d31' --splashBackgroundColor '#f4f6f1'
           npx cap sync android
           cd android && chmod +x gradlew && ./gradlew assembleDebug --no-daemon -q
           cp app/build/outputs/apk/debug/app-debug.apk $GITHUB_WORKSPACE/Alagamy.apk
