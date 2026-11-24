@@ -65,13 +65,32 @@ h3 { font-size: 15px; font-weight: 700; }
   color: #e6efe9; text-decoration: none; font-weight: 500;
 }
 .nav a svg { width: 19px; height: 19px; opacity: .85; flex: none; }
+.ic { flex: none; }
 .nav a:hover { background: rgba(255,255,255,.07); }
-.nav a.on { background: #fff; color: var(--crate-deep); }
+.nav a.on { background: #fff; color: var(--crate-deep); box-shadow: inset -4px 0 0 var(--citrus); }
 .nav a.on svg { opacity: 1; }
 .nav a .pill { margin-inline-start: auto; background: var(--citrus); color: #3b2800; border-radius: 20px; padding: 0 8px; font-size: 12px; font-weight: 700; }
-.side .me { margin-top: auto; padding: 14px 10px 0; border-top: 1px solid rgba(255,255,255,.12); font-size: 13px; }
-.side .me b { display: block; font-size: 14px; }
-.side .me button { margin-top: 8px; background: none; border: 1px solid rgba(255,255,255,.25); color: #e6efe9; border-radius: 6px; padding: 4px 12px; cursor: pointer; }
+.side .me { margin-top: auto; padding: 14px 6px 0; border-top: 1px solid rgba(255,255,255,.12); display: flex; align-items: center; gap: 10px; }
+.side .me .avatar { width: 36px; height: 36px; border-radius: 50%; background: var(--citrus); color: #3b2800; display: grid; place-items: center; font-weight: 700; flex: none; }
+.side .me .who { flex: 1; min-width: 0; line-height: 1.3; }
+.side .me .who b { display: block; font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.side .me .who span { font-size: 12px; color: #a9c4b4; }
+.side .me button { background: none; border: 0; color: #cfe0d6; border-radius: 6px; padding: 6px; cursor: pointer; display: grid; }
+.side .me button:hover { background: rgba(255,255,255,.1); color: #fff; }
+.side .me button svg { width: 18px; height: 18px; }
+
+/* أزرار سريعة في الرئيسية */
+.quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
+.quick a { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center;
+  background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; text-decoration: none; color: var(--ink); }
+.quick a:hover { border-color: var(--crate); }
+.quick a svg { grid-row: span 2; width: 38px; height: 38px; padding: 8px; border-radius: 9px; background: var(--crate-soft); color: var(--crate); }
+.quick a:first-child svg { background: var(--crate); color: #fff; }
+.quick a b { font-size: 15px; }
+.quick a span { font-size: 12.5px; color: var(--ink-3); }
+
+/* شريط سفلي للموبايل */
+.bottom-nav { display: none; }
 
 .main { min-width: 0; display: flex; flex-direction: column; }
 .topbar {
@@ -289,6 +308,15 @@ table.t tr.void td { color: var(--ink-3); text-decoration: line-through; }
   .side { position: fixed; inset-block: 0; inset-inline-start: 0; width: 260px; z-index: 50; transform: translateX(110%); transition: transform .2s; }
   .side.open { transform: none; box-shadow: 0 0 0 100vmax rgba(0,0,0,.35); }
   .topbar { display: flex; }
+  .bottom-nav { display: flex; position: fixed; bottom: 0; inset-inline: 0; z-index: 40; background: var(--sheet); border-top: 1px solid var(--line);
+    padding: 4px 4px calc(4px + env(safe-area-inset-bottom)); }
+  .bottom-nav a, .bottom-nav button { flex: 1; display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px; border: 0; background: none;
+    color: var(--ink-3); font-size: 11.5px; font-weight: 600; text-decoration: none; border-radius: 8px; cursor: pointer; }
+  .bottom-nav svg { width: 22px; height: 22px; }
+  .bottom-nav a.on { color: var(--crate); background: var(--crate-soft); }
+  .page { padding-bottom: 90px; }
+  .toasts { bottom: 80px; }
+  .quick { grid-template-columns: repeat(2, 1fr); }
   .page { padding: 16px 14px 60px; }
   .sale-grid { grid-template-columns: 1fr; }
   .totals { position: static; }

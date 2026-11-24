@@ -3,11 +3,21 @@ import { CONFIG } from './config.js';
 // وضع التجربة المحلية: لو مفيش بيانات Supabase بنكلم سيرفر التجربة
 const DEV = !CONFIG.SUPABASE_URL;
 let sb = null;
+let lib = null;
+
+// مكتبة Supabase: من نسخة جوه البرنامج لو موجودة (تطبيق الويندوز والموبايل)، وإلا من النت
+async function loadLib() {
+  if (!lib) {
+    try { lib = await import('./vendor/supabase.js'); }
+    catch { lib = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm'); }
+  }
+  return lib;
+}
 
 async function client() {
   if (DEV) return null;
   if (!sb) {
-    const { createClient } = await import('https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm');
+    const { createClient } = await loadLib();
     sb = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
       auth: { persistSession: true, autoRefreshToken: true },
     });
@@ -24,6 +34,9 @@ function friendly(msg) {
   if (/Password should be at least/i.test(msg)) return 'كلمة المرور لازم تكون 6 حروف أو أرقام على الأقل';
   if (/Failed to fetch|NetworkError|network/i.test(msg)) return 'مفيش اتصال بالإنترنت أو السيرفر مش بيرد';
   if (/JWT expired/i.test(msg)) return 'انتهت الجلسة، سجّل دخول تاني';
+  if (/signups are disabled/i.test(msg)) return 'إنشاء الحسابات مقفول من إعدادات Supabase';
+  if (/Email not confirmed/i.test(msg)) return 'لازم تقفل Confirm email من إعدادات Supabase';
+  if (/rate limit/i.test(msg)) return 'محاولات كتير ورا بعض، استنى دقيقة وحاول تاني';
   return msg;
 }
 
@@ -73,6 +86,31 @@ export const api = {
     if (error) throw new Error(friendly(error.message));
     const s = await c.auth.getSession();
     if (!s.data.session) await this.login(username, password);
+  },
+
+  // المدير بيعمل حساب لمحاسب من غير ما يخرج من حسابه
+  async createUser(username, password, fullName) {
+    username = (username || '').trim().toLowerCase();
+    if (!/^[a-z0-9_.]{3,30}$/.test(username)) {
+      throw new Error('اسم المستخدم لازم يكون بالإنجليزي (حروف وأرقام) ومن 3 حروف على الأقل');
+    }
+    if ((password || '').length < 6) throw new Error('كلمة المرور لازم تكون 6 حروف أو أرقام على الأقل');
+    if (DEV) {
+      const j = await devPost('/dev/register', { username, full_name: fullName });
+      return j.uid;
+    }
+    const { createClient } = await loadLib();
+    const tmp = createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_ANON_KEY, {
+      auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'alagamy-new-user' },
+    });
+    const { data, error } = await tmp.auth.signUp({
+      email: email(username), password, options: { data: { username, full_name: fullName } },
+    });
+    if (error) throw new Error(friendly(error.message));
+    if (!data.user?.id || (data.user.identities && data.user.identities.length === 0)) {
+      throw new Error('اسم المستخدم ده موجود قبل كده، اختار اسم تاني');
+    }
+    return data.user.id;
   },
 
   async changePassword(newPassword) {

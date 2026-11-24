@@ -94,20 +94,26 @@ async function items(app, body) {
 async function users(app, body, query) {
   const draw = async () => {
     const list = await api.rpc('list_users');
-    body.innerHTML = `<div class="alert info" style="margin-bottom:14px">أي حد عايز يدخل البرنامج يفتح الرابط ويدوس "اعمل حساب جديد"، وبعدين انت تفعّله من هنا وتختار صلاحياته.</div>
+    body.innerHTML = `<div class="row" style="margin-bottom:14px"><button class="btn primary" id="addUser">${icon('userPlus')} إضافة محاسب أو مدير</button>
+        <span class="muted small">أو المحاسب يعمل حساب بنفسه من صفحة الدخول، وانت تفعّله من هنا.</span></div>
       <div class="panel"><div class="tbl-wrap"><table class="t"><thead><tr><th>الاسم</th><th>اسم الدخول</th><th>النوع</th><th>الحالة</th><th>الصلاحيات</th><th></th></tr></thead>
       <tbody>${list.map((u) => `<tr><td><b>${esc(u.full_name || '—')}</b></td><td class="num">${esc(u.username)}</td>
         <td>${u.role === 'admin' ? tag('approved', 'مدير') : 'محاسب'}</td><td>${u.active ? tag('ok', 'شغال') : tag('pending', 'مستني تفعيل')}</td>
         <td class="small muted">${u.role === 'admin' ? 'كل الصلاحيات' : PERMS.filter(([k]) => u.perms?.[k]).map(([, l]) => l).join('، ') || 'ولا حاجة'}</td>
         <td><button class="btn sm ${u.active ? 'ghost' : 'primary'}" data-u="${u.id}">${u.active ? 'تعديل' : 'تفعيل'}</button></td></tr>`).join('')}</tbody></table></div></div>`;
     body.querySelectorAll('[data-u]').forEach((b) => b.onclick = () => form(list.find((u) => u.id === b.dataset.u)));
+    body.querySelector('#addUser').onclick = () => form(null);
     if (query.user) { const u = list.find((x) => x.id === query.user); query.user = null; if (u) form(u); }
   };
   const form = (u) => {
+    const isNew = !u;
+    u = u || { full_name: '', username: '', role: 'accountant', active: true, perms: { sales: true, collections: true, customers: true } };
     const self = u.id === app.me.id;
     const m = modal({
-      title: 'صلاحيات ' + (u.full_name || u.username), wide: true,
+      title: isNew ? 'إضافة مستخدم جديد' : 'صلاحيات ' + (u.full_name || u.username), wide: true,
       body: `<form class="grid" id="f">
+        ${isNew ? `<div class="grid g2"><label class="f">اسم الدخول (بالإنجليزي)<input class="in" name="username" dir="ltr" autocapitalize="none" placeholder="مثلاً: mona"></label>
+          <label class="f">كلمة المرور (6 على الأقل)<input class="in" name="password" dir="ltr" placeholder="ابعتها للمحاسب"></label></div>` : ''}
         <div class="grid g3"><label class="f">الاسم<input class="in" name="full_name" value="${esc(u.full_name)}"></label>
         <label class="f">النوع<select class="in" name="role" ${self ? 'disabled' : ''}><option value="accountant" ${u.role !== 'admin' ? 'selected' : ''}>محاسب</option>
           <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير (كل الصلاحيات)</option></select></label>
@@ -124,10 +130,15 @@ async function users(app, body, query) {
     m.$('[data-none]').onclick = () => m.$$('[data-p]').forEach((c) => c.checked = false);
     m.$('[data-ok]').onclick = () => busy(m.$('[data-ok]'), async () => {
       const perms = Object.fromEntries(m.$$('[data-p]').map((c) => [c.dataset.p, c.checked]));
+      if (isNew) {
+        if (!m.$('[name=full_name]').value.trim()) throw new Error('اكتب اسم المحاسب');
+        u.id = await api.createUser(m.$('[name=username]').value, m.$('[name=password]').value, m.$('[name=full_name]').value.trim());
+      }
       const p = { id: u.id, full_name: m.$('[name=full_name]').value.trim(), perms };
       if (!self) { p.role = role.value; p.active = m.$('[name=active]').checked; }
       await api.rpc('save_user', p);
-      ok('اتحفظت الصلاحيات'); m.close(); draw().catch(err);
+      ok(isNew ? `اتعمل حساب ${p.full_name} — اسم الدخول ${m.$('[name=username]').value.trim().toLowerCase()}` : 'اتحفظت الصلاحيات');
+      m.close(); draw().catch(err);
     });
   };
   await draw();

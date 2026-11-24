@@ -60,7 +60,7 @@ const NAV = [
   ['settlements', 'تصفية الموردين', 'scale'],
   { grp: 'الفلوس والإدارة' },
   ['cash', 'العهدة', 'wallet', ['cash', 'reports', 'sales', 'collections', 'payouts']],
-  ['approvals', 'الموافقات', 'check', 'approve'],
+  ['approvals', 'الموافقات', 'approve', 'approve'],
   ['reports', 'التقارير', 'chart', 'reports'],
   ['settings', 'الإعدادات', 'gear', ['settings', 'users', 'backup']],
 ];
@@ -80,17 +80,25 @@ function shell() {
         const pill = path === 'approvals' ? `<span class="pill hidden" data-pending>0</span>` : '';
         return `<a href="#/${path}" data-nav="${path}">${icon(ic)}<span>${esc(label)}</span>${pill}</a>`;
       }).join('')}</nav>
-      <div class="me"><b>${esc(app.me.full_name || app.me.username)}</b>${app.me.role === 'admin' ? 'المدير' : 'محاسب'}
-        <div class="row" style="gap:6px"><button data-acc>حسابي</button><button data-logout>خروج</button></div></div>
+      <div class="me">
+        <div class="avatar">${esc((app.me.full_name || app.me.username).trim().charAt(0))}</div>
+        <div class="who"><b>${esc(app.me.full_name || app.me.username)}</b><span>${app.me.role === 'admin' ? 'مدير' : 'محاسب'}</span></div>
+        <button data-acc title="حسابي" aria-label="حسابي">${icon('user')}</button><button data-logout title="خروج" aria-label="خروج">${icon('logout')}</button>
+      </div>
     </aside>
     <div class="main">
       <div class="topbar"><button data-menu aria-label="القائمة">${icon('menu')}</button><b>${esc(app.settings?.shop_name || '')}</b><img src="${logo}" alt=""></div>
       <main class="page" id="page"></main>
     </div>
+    <nav class="bottom-nav">${[['', 'الرئيسية', 'home'], ['sale', 'بيع', 'cart', 'sales'], ['customers', 'الزباين', 'users'],
+      ['cash', 'العهدة', 'wallet', ['cash', 'reports', 'sales', 'collections', 'payouts']]]
+      .filter((x) => allowed(x[3])).map(([path, label, ic]) => `<a href="#/${path}" data-nav="${path}">${icon(ic)}<span>${label}</span></a>`).join('')}
+      <button data-more>${icon('more')}<span>المزيد</span></button></nav>
   </div>`;
   document.querySelector('[data-logout]').onclick = async () => { await api.logout(); location.hash = ''; start(); };
   document.querySelector('[data-acc]').onclick = () => app.go('#/account');
   document.querySelector('[data-menu]').onclick = () => document.getElementById('side').classList.toggle('open');
+  document.querySelector('[data-more]').onclick = () => document.getElementById('side').classList.toggle('open');
   document.getElementById('side').addEventListener('click', (e) => { if (e.target.closest('a')) e.currentTarget.classList.remove('open'); });
   app.setPending(app.pending);
 }

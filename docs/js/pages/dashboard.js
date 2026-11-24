@@ -21,7 +21,15 @@ export async function render({ app, el }) {
   ${d.pending ? `<div class="alert warn" style="margin-bottom:14px">فيه <b>${d.pending}</b> طلب مستني موافقتك. <a href="#/approvals">افتح الموافقات</a></div>` : ''}
   ${needBackup ? `<div class="alert info" style="margin-bottom:14px">بقالك أكتر من أسبوع من غير نسخة احتياطية Excel. <a href="#/settings?tab=backup">نزّل نسخة دلوقتي</a></div>` : ''}
 
-  <div class="ledger-strip">
+  <div class="quick">
+    ${app.can('sales') ? `<a href="#/sale">${icon('cart')}<b>بيع جديد</b><span>فاتورة نقدي أو آجل</span></a>` : ''}
+    ${app.can('collections') ? `<a href="#/customers">${icon('money')}<b>تحصيل</b><span>دفعة من حساب زبون</span></a>` : ''}
+    ${app.can('collections') ? `<a href="#/crates">${icon('crate')}<b>مرتجع صناديق</b><span>رد الرهن أو خصمه</span></a>` : ''}
+    ${app.can('suppliers') ? `<a href="#/shipments/new">${icon('truck')}<b>نقلة واردة</b><span>بضاعة جت من مورد</span></a>` : ''}
+    <a href="#/cash">${icon('wallet')}<b>العهدة</b><span>${cs.shift ? 'مع ' + esc(cs.shift.user_name) : 'مقفولة'}</span></a>
+  </div>
+
+  <div class="ledger-strip" style="margin-top:18px">
     <div><div class="k">مبيعات النهارده</div><div class="v">${money(d.sales_total)}</div><div class="h">${d.sales_count} فاتورة</div></div>
     <div><div class="k">نقدي</div><div class="v pos">${money(d.cash_sales)}</div><div class="h">آجل: ${money(d.credit_sales)}</div></div>
     <div><div class="k">تحصيلات النهارده</div><div class="v pos">${money(d.collections)}</div><div class="h">من حسابات الزباين</div></div>
