@@ -20,7 +20,7 @@ export async function renderList({ app, el }) {
       <thead><tr><th>المحاسب</th><th class="n">عدد العهد</th><th>دلوقتي</th><th class="n">إجمالي العجز</th><th class="n">إجمالي الزيادة</th>
         <th class="n">مستنية مراجعة</th><th class="n">الفواتير</th><th class="n">مبيعاته</th></tr></thead>
       <tbody>${rows.map((u) => `<tr class="click" data-u="${u.id}"><td><b>${esc(u.name)}</b> <span class="muted small num">${esc(u.username)}</span>
-          ${u.role === 'admin' ? tag('approved', 'مدير') : ''}</td>
+          ${u.role === 'admin' ? tag('approved', 'مدير') : ''}${u.deleted ? tag('void', 'حسابه محذوف') : ''}</td>
         <td class="n">${u.shifts}</td><td>${u.open ? tag('pending', 'عهدته مفتوحة') : '<span class="muted">—</span>'}</td>
         <td class="n ${n(u.short) ? 't-out' : 'muted'}">${money(u.short)}</td><td class="n ${n(u.over) ? 't-in' : 'muted'}">${money(u.over)}</td>
         <td class="n">${u.unreviewed ? tag('pending', u.unreviewed) : '<span class="muted">0</span>'}</td>

@@ -326,4 +326,26 @@ accs = {x["username"]: x for x in call(admin, "list_accountants")}
 assert float(accs["mona"]["short"]) >= 30 and float(accs["ahmed"]["over"]) >= 50
 ok("العهد مربوطة ببعض: الزيادة اتنقلت للعهدة اللي بعدها، العجز اتسجل على المحاسب، والتصفير للمدير بس")
 
+# ---------- حذف حساب واسترجاعه ----------
+tmp = new_user("temp1", "محاسب مؤقت", inviter=admin)
+call(admin, "save_user", {"id": tmp, "active": True, "perms": {"sales": True, "cash": True}})
+expect_error(admin, "delete_user", {"id": admin}, "حسابك")
+expect_error(acc, "delete_user", {"id": tmp}, "للمدير بس")
+call(tmp, "open_shift")
+expect_error(admin, "delete_user", {"id": tmp}, "عهدته مفتوحة")
+call(tmp, "close_shift", {"counted": float(call(tmp, "current_shift")["shift"]["opening_amount"])})
+call(admin, "delete_user", {"id": tmp})
+expect_error(tmp, "current_shift", {}, "")
+users = {u["username"]: u for u in call(admin, "list_users")}
+assert users["temp1"]["deleted_at"] and users["temp1"]["days_left"] == 7, users["temp1"]
+call(admin, "restore_user", {"id": tmp})
+call(tmp, "current_shift")
+call(admin, "delete_user", {"id": tmp})
+sql(f"update profiles set deleted_at = now() - interval '8 days' where id = '{tmp}'")
+assert "temp1" not in {u["username"] for u in call(admin, "list_users")}
+expect_error(admin, "restore_user", {"id": tmp}, "نهائي")
+assert sql(f"select full_name from profiles where id = '{tmp}'") == "محاسب مؤقت"
+new_user("temp1", "محاسب جديد بنفس الاسم", inviter=admin)
+ok("حذف حساب المحاسب: بيتقفل على طول، بيرجع خلال 7 أيام، وبعدها بيتمسح والاسم بيتحرر والفواتير بتفضل باسمه")
+
 print("\nكل الاختبارات نجحت ✔")

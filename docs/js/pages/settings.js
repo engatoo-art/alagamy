@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import { desktop, hostCall, saveToFolder, downloadBackup } from '../backup.js';
-import { esc, money, moneyT, n, icon, ok, err, busy, modal, formData, tag, PERMS, emptyState, todayISO, dateT } from '../ui.js';
+import { esc, money, moneyT, n, icon, ok, err, busy, modal, formData, tag, PERMS, emptyState, todayISO, dateT, confirmBox } from '../ui.js';
 
 export async function render({ app, el, query }) {
   const tabs = [
@@ -95,15 +95,36 @@ async function items(app, body) {
 // ---------- المستخدمين ----------
 async function users(app, body, query) {
   const draw = async () => {
-    const list = await api.rpc('list_users');
+    const all = await api.rpc('list_users');
+    const list = all.filter((u) => !u.deleted_at), gone = all.filter((u) => u.deleted_at);
     body.innerHTML = `<div class="row" style="margin-bottom:14px"><button class="btn primary" id="addUser">${icon('userPlus')} إضافة محاسب أو مدير</button>
-        <span class="muted small">أو المحاسب يعمل حساب بنفسه من صفحة الدخول، وانت تفعّله من هنا.</span></div>
+        <span class="muted small">محدش يقدر يعمل حساب غير المدير من هنا.</span></div>
       <div class="panel"><div class="tbl-wrap"><table class="t"><thead><tr><th>الاسم</th><th>اسم الدخول</th><th>النوع</th><th>الحالة</th><th>الصلاحيات</th><th></th></tr></thead>
-      <tbody>${list.map((u) => `<tr><td><b>${esc(u.full_name || '—')}</b></td><td class="num">${esc(u.username)}</td>
-        <td>${u.role === 'admin' ? tag('approved', 'مدير') : 'محاسب'}</td><td>${u.active ? tag('ok', 'شغال') : tag('pending', 'مستني تفعيل')}</td>
+      <tbody>${list.map((u) => `<tr><td><b>${esc(u.full_name || '—')}</b>${u.id === app.me.id ? ' <span class="muted small">(انت)</span>' : ''}</td><td class="num">${esc(u.username)}</td>
+        <td>${u.role === 'admin' ? tag('approved', 'مدير') : 'محاسب'}</td><td>${u.active ? tag('ok', 'شغال') : tag('pending', 'موقوف')}</td>
         <td class="small muted">${u.role === 'admin' ? 'كل الصلاحيات' : PERMS.filter(([k]) => u.perms?.[k]).map(([, l]) => l).join('، ') || 'ولا حاجة'}</td>
-        <td><button class="btn sm ${u.active ? 'ghost' : 'primary'}" data-u="${u.id}">${u.active ? 'تعديل' : 'تفعيل'}</button></td></tr>`).join('')}</tbody></table></div></div>`;
+        <td style="white-space:nowrap"><button class="btn sm ${u.active ? 'ghost' : 'primary'}" data-u="${u.id}">${u.active ? 'تعديل' : 'تفعيل'}</button>
+          ${u.id !== app.me.id && u.role !== 'admin' ? `<button class="btn sm ghost danger" data-del="${u.id}">${icon('trash')} حذف</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>
+      ${gone.length ? `<div class="panel"><div class="ph"><h2>${icon('trash')} حسابات محذوفة</h2><span class="muted small">تقدر تسترجع أي حساب خلال 7 أيام من حذفه، وبعدها بيتمسح نهائي.</span></div>
+        <div class="tbl-wrap"><table class="t"><thead><tr><th>الاسم</th><th>اسم الدخول</th><th>اتحذف</th><th>حذفه</th><th>فاضل للمسح النهائي</th><th></th></tr></thead>
+        <tbody>${gone.map((u) => `<tr class="void"><td><b>${esc(u.full_name || '—')}</b></td><td class="num">${esc(u.username)}</td>
+          <td>${dateT(String(u.deleted_at).slice(0, 10))}</td><td class="small muted">${esc(u.deleted_by_name || '')}</td>
+          <td>${tag(u.days_left <= 1 ? 'rejected' : 'pending', u.days_left <= 0 ? 'النهارده' : u.days_left === 1 ? 'يوم واحد' : u.days_left + ' أيام')}</td>
+          <td><button class="btn sm primary" data-res="${u.id}">${icon('back')} استرجاع</button></td></tr>`).join('')}</tbody></table></div></div>` : ''}`;
     body.querySelectorAll('[data-u]').forEach((b) => b.onclick = () => form(list.find((u) => u.id === b.dataset.u)));
+    body.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
+      const u = list.find((x) => x.id === b.dataset.del);
+      if (!await confirmBox(`هتحذف حساب <b>${esc(u.full_name || u.username)}</b>.<br><br>
+          • مش هيقدر يدخل البرنامج من دلوقتي.<br>
+          • الفواتير والعهد اللي عملها هتفضل زي ما هي وباسمه.<br>
+          • تقدر تسترجعه خلال <b>7 أيام</b> من "حسابات محذوفة" تحت، وبعدها بيتمسح نهائي.`, { title: 'حذف حساب', yes: 'احذف الحساب', danger: true })) return;
+      await busy(b, async () => { await api.rpc('delete_user', { id: u.id }); ok(`اتحذف حساب ${u.full_name || u.username} — تقدر تسترجعه خلال 7 أيام`); await draw(); });
+    });
+    body.querySelectorAll('[data-res]').forEach((b) => b.onclick = () => busy(b, async () => {
+      const u = gone.find((x) => x.id === b.dataset.res);
+      await api.rpc('restore_user', { id: u.id });
+      ok(`رجع حساب ${u.full_name || u.username} زي ما كان`); await draw();
+    }));
     body.querySelector('#addUser').onclick = () => form(null);
     if (query.user) { const u = list.find((x) => x.id === query.user); query.user = null; if (u) form(u); }
   };

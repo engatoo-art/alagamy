@@ -472,11 +472,85 @@ end $$;
 
 -- =========================== المستخدمين ==============================
 
+-- حذف حساب: بيتقفل على طول، ويفضل قابل للاسترجاع 7 أيام، وبعدها بيتمسح نهائي
+-- (الفواتير والعهد اللي عملها بتفضل زي ما هي وباسمه، لأن الحسابات مينفعش تتمسح)
+alter table public.profiles add column if not exists deleted_at timestamptz;
+alter table public.profiles add column if not exists deleted_by uuid;
+alter table public.profiles add column if not exists was_active boolean;
+alter table public.profiles add column if not exists purged_at timestamptz;
+
+-- منع/فك الدخول من نظام تسجيل الدخول نفسه (لو الأعمدة دي مش موجودة بنكمل عادي)
+create or replace function public._auth_lock(uid uuid, lock boolean) returns void
+language plpgsql security definer set search_path = public as $$
+begin
+  begin
+    execute 'update auth.users set banned_until = $2 where id = $1' using uid, case when lock then 'infinity'::timestamptz end;
+  exception when others then null; end;
+  if lock then
+    begin execute 'delete from auth.sessions where user_id = $1' using uid; exception when others then null; end;
+  end if;
+end $$;
+
+create or replace function public._purge_deleted() returns void
+language plpgsql security definer set search_path = public as $$
+declare r profiles;
+begin
+  for r in select * from profiles where deleted_at is not null and purged_at is null and deleted_at < now() - interval '7 days' loop
+    perform _auth_lock(r.id, true);
+    begin
+      execute 'update auth.users set email = $2 where id = $1' using r.id, 'deleted-' || r.id || '@deleted.local';
+    exception when others then null; end;
+    begin execute 'update auth.users set encrypted_password = '''' where id = $1' using r.id; exception when others then null; end;
+    begin execute 'delete from auth.identities where user_id = $1' using r.id; exception when others then null; end;
+    -- اسم الدخول بيتحرر علشان ينفع يتعمل بيه حساب جديد، والاسم الحقيقي بيفضل في الفواتير القديمة
+    update profiles set purged_at = now(), active = false, perms = '{}'::jsonb, full_name = coalesce(nullif(full_name, ''), username),
+           username = 'deleted-' || left(replace(r.id::text, '-', ''), 10)
+    where id = r.id;
+  end loop;
+end $$;
+
 create or replace function public.list_users(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 begin
   perform _need('users');
-  return (select coalesce(jsonb_agg(to_jsonb(u) order by u.created_at), '[]') from profiles u);
+  perform _purge_deleted();
+  return (select coalesce(jsonb_agg(to_jsonb(u) - 'was_active' || jsonb_build_object(
+            'deleted_by_name', _uname(u.deleted_by),
+            'days_left', case when u.deleted_at is not null then greatest(0, ceil(extract(epoch from (u.deleted_at + interval '7 days' - now())) / 86400))::int end)
+          order by u.created_at), '[]')
+          from profiles u where u.purged_at is null);
+end $$;
+
+create or replace function public.delete_user(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := (p->>'id')::uuid; r profiles;
+begin
+  perform _need_admin();
+  select * into r from profiles where id = uid and purged_at is null;
+  if not found then raise exception 'الحساب غير موجود'; end if;
+  if uid = auth.uid() then raise exception 'مينفعش تحذف حسابك انت'; end if;
+  if r.role = 'admin' then raise exception 'ده حساب مدير — غيّره لمحاسب الأول لو عاوز تحذفه'; end if;
+  if r.deleted_at is not null then raise exception 'الحساب ده محذوف بالفعل'; end if;
+  if exists (select 1 from cash_shifts where user_id = uid and status = 'open') then
+    raise exception 'المحاسب ده عهدته مفتوحة — اقفلها الأول من صفحة العهدة وبعدين احذفه';
+  end if;
+  update profiles set was_active = active, active = false, deleted_at = now(), deleted_by = auth.uid() where id = uid;
+  perform _auth_lock(uid, true);
+  return jsonb_build_object('ok', true, 'restore_until', now() + interval '7 days');
+end $$;
+
+create or replace function public.restore_user(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := (p->>'id')::uuid; r profiles;
+begin
+  perform _need_admin();
+  perform _purge_deleted();
+  select * into r from profiles where id = uid;
+  if not found or r.deleted_at is null then raise exception 'الحساب ده مش محذوف'; end if;
+  if r.purged_at is not null then raise exception 'عدّى أكتر من 7 أيام والحساب اتمسح نهائي — اعمله حساب جديد'; end if;
+  update profiles set active = coalesce(was_active, true), deleted_at = null, deleted_by = null, was_active = null where id = uid;
+  perform _auth_lock(uid, false);
+  return jsonb_build_object('ok', true);
 end $$;
 
 create or replace function public.save_user(p jsonb) returns jsonb
@@ -485,6 +559,7 @@ declare uid uuid := (p->>'id')::uuid; r profiles;
 begin
   perform _need_admin();
   if coalesce(p->>'role', 'accountant') not in ('admin', 'accountant') then raise exception 'نوع الحساب غلط'; end if;
+  if exists (select 1 from profiles where id = uid and deleted_at is not null) then raise exception 'الحساب ده محذوف — استرجعه الأول'; end if;
   select * into r from profiles where id = uid;
   if not found then raise exception 'المستخدم غير موجود'; end if;
   if uid = auth.uid() and (coalesce(p->>'role', r.role) <> 'admin' or coalesce((p->>'active')::boolean, true) = false) then
@@ -1743,6 +1818,7 @@ begin
   perform _need_any(array['approve','reports','cash']);
   return (select coalesce(jsonb_agg(jsonb_build_object(
       'id', u.id, 'name', coalesce(nullif(u.full_name, ''), u.username), 'username', u.username, 'role', u.role, 'active', u.active,
+      'deleted', u.deleted_at is not null,
       'shifts', (select count(*) from cash_shifts where user_id = u.id),
       'open', exists (select 1 from cash_shifts where user_id = u.id and status = 'open'),
       'short', (select coalesce(-sum(difference) filter (where difference < 0), 0) from cash_shifts where user_id = u.id),
@@ -2063,6 +2139,8 @@ alter default privileges in schema public revoke execute on functions from publi
 grant execute on function public.setup_needed(jsonb) to anon, authenticated;
 grant execute on function public.create_invite(jsonb) to authenticated;
 grant execute on function public.reset_drawer(jsonb) to authenticated;
+grant execute on function public.delete_user(jsonb) to authenticated;
+grant execute on function public.restore_user(jsonb) to authenticated;
 
 grant execute on function
   public.app_bootstrap(jsonb), public.list_users(jsonb), public.save_user(jsonb), public.save_settings(jsonb),
