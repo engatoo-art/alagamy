@@ -194,7 +194,7 @@ export function combo(input, { items, label, sub = () => '', onPick, max = 50, e
     hl = Math.min(hl, Math.max(shown.length - 1, 0));
     list.innerHTML = shown.length
       ? shown.map((it, i) => `<div class="opt ${i === hl ? 'hl' : ''}" data-i="${i}"><span>${esc(label(it))}</span><small>${sub(it)}</small></div>`).join('')
-      : `<div class="opt muted" style="white-space:normal">${empty ? empty(q) : 'مفيش نتايج'}</div>`;
+      : `<div class="opt muted" style="display:block;white-space:normal;line-height:1.8;cursor:default">${empty ? empty(q) : 'مفيش نتايج'}</div>`;
     place();
     list.querySelector('.opt.hl')?.scrollIntoView({ block: 'nearest' });
   };

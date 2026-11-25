@@ -145,9 +145,15 @@ export async function renderNew({ app, el, query }) {
     combo(pickIn, {
       items: () => pickables(L), label: (p) => p.label,
       sub: (p) => `باقي ${qtyT(left(p, L))} — ${dateT(p.ship_date)}`,
-      empty: (q) => (!items.length
-        ? 'مفيش بضاعة في المحل دلوقتي. الأصناف هنا بتيجي من <b>النقلات الواردة</b> — سجّل نقلة الأول وهتظهر هنا.'
-        : q ? `مفيش "${esc(q)}" في البضاعة الموجودة. لو لسه واصلة، سجّلها في النقلات الواردة.` : 'كل البضاعة اللي في النقلات اتباعت.'),
+      empty: (q) => {
+        // الأصناف المحفوظة اللي مفيش منها بضاعة دلوقتي: بتبان علشان تعرف تسجّل نقلة
+        const saved = (app.items || []).filter((i) => i.active !== false && (!q || i.name.toLowerCase().includes(q)) && !items.some((x) => x.item_id === i.id && left(x, L) > 0));
+        const names = saved.slice(0, 12).map((i) => `<b>${esc(i.name)}</b>`).join('، ');
+        const how = app.can('suppliers') ? ' <a href="#/shipments/new">سجّل نقلة واردة</a> بالصنف والعدد وهيظهر هنا على طول.' : ' اطلب من المدير يسجّل النقلة.';
+        if (saved.length) return `${names}: ${saved.length > 1 ? 'موجودين' : 'موجود'} في الأصناف بس <b>مفيش ${saved.length > 1 ? 'منهم' : 'منه'} بضاعة في المحل</b> دلوقتي.${how}`;
+        if (!items.length) return 'مفيش بضاعة في المحل دلوقتي. الأصناف في البيع بتيجي من النقلات الواردة.' + how;
+        return q ? `مفيش "${esc(q)}" في البضاعة الموجودة.${how}` : 'كل البضاعة اللي في النقلات اتباعت.' + how;
+      },
       onPick: (p) => { L.pick = p; L.unit = p.default_unit || 'kg'; syncUnit(); recalc(); tr.querySelector('[data-f=qty]').focus(); },
     });
     pickIn.addEventListener('input', () => { if (L.pick && pickIn.value !== L.pick.label) { L.pick = null; recalc(); } });

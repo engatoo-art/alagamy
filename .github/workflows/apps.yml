@@ -71,6 +71,7 @@ jobs:
           cp -r ../docs www && rm -f www/.nojekyll
           cat > capacitor.config.json <<'JSON'
           { "appId": "com.alagamy.accounts", "appName": "العجمي", "webDir": "www",
+            "server": { "url": "https://engatoo-art.github.io/alagamy/", "errorPath": "index.html", "androidScheme": "https" },
             "android": { "backgroundColor": "#f4f6f1" } }
           JSON
           npx cap add android

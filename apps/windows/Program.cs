@@ -85,6 +85,12 @@ public class MainForm : Form
 {
     private const string Host = "app.alagamy.local";
     private const string Origin = "https://" + Host + "/";
+    // آخر نسخة من البرنامج على النت — البرنامج بيفتحها كل مرة علشان التحديثات توصل لوحدها
+    private const string Remote = "https://engatoo-art.github.io/alagamy/";
+    private bool _fellBack;
+
+    private static bool Ours(string uri) =>
+        uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase) || uri.StartsWith(Remote, StringComparison.OrdinalIgnoreCase);
     private readonly WebView2 _web = new() { Dock = DockStyle.Fill };
     private readonly string _root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Alagamy");
 
@@ -151,20 +157,30 @@ public class MainForm : Form
             // البرنامج مايفتحش أي صفحة غير صفحاته هو
             core.NavigationStarting += (s, e) =>
             {
-                if (e.Uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase) || e.Uri == "about:blank") return;
+                if (Ours(e.Uri) || e.Uri == "about:blank") return;
                 e.Cancel = true;
                 OpenExternal(e.Uri);
             };
             core.FrameNavigationStarting += (s, e) =>
             {
-                if (e.Uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase) || e.Uri.StartsWith("about:")) return;
+                if (Ours(e.Uri) || e.Uri.StartsWith("about:")) return;
                 e.Cancel = true;
             };
             core.NewWindowRequested += (s, e) => { e.Handled = true; OpenExternal(e.Uri); };
             core.PermissionRequested += (s, e) => e.State = CoreWebView2PermissionState.Deny;
             core.WebMessageReceived += OnMessage;
 
-            core.Navigate(Origin + "index.html");
+            // لو النت أو الموقع مش شغال بنفتح النسخة اللي جوه البرنامج
+            core.NavigationCompleted += (s, e) =>
+            {
+                if (!e.IsSuccess && !_fellBack && core.Source.StartsWith(Remote, StringComparison.OrdinalIgnoreCase))
+                {
+                    _fellBack = true;
+                    core.Navigate(Origin + "index.html");
+                }
+            };
+            try { await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.DiskCache); } catch { }
+            core.Navigate(Remote + "index.html?v=" + DateTime.UtcNow.Ticks);
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -193,7 +209,7 @@ public class MainForm : Form
     private void OnMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
     {
         // بنقبل رسايل من صفحات البرنامج بس
-        if (!e.Source.StartsWith(Origin, StringComparison.OrdinalIgnoreCase)) return;
+        if (!Ours(e.Source)) return;
         JsonNode msg = null;
         try
         {
