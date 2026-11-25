@@ -11,7 +11,8 @@
     <ApplicationIcon>app.ico</ApplicationIcon>
     <ApplicationHighDpiMode>PerMonitorV2</ApplicationHighDpiMode>
     <Version>1.0.0</Version>
-    <Product>العجمي للخضروات والفاكهة</Product>
+    <Product>محل عبده العجمي وأولاده محمد وعبدالرحمن</Product>
+    <Company>محلات عبده العجمي وأولاده</Company>
   </PropertyGroup>
 
   <!-- ملف exe واحد يشتغل من غير تثبيت -->

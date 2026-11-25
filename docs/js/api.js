@@ -36,6 +36,7 @@ function friendly(msg) {
   if (/JWT expired/i.test(msg)) return 'انتهت الجلسة، سجّل دخول تاني';
   if (/signups are disabled/i.test(msg)) return 'إنشاء الحسابات مقفول من إعدادات Supabase';
   if (/Email not confirmed/i.test(msg)) return 'لازم تقفل Confirm email من إعدادات Supabase';
+  if (/Database error saving new user|إنشاء الحسابات مقفول/i.test(msg)) return 'إنشاء الحسابات مقفول — المدير بس اللي يعمل حسابات من الإعدادات';
   if (/rate limit/i.test(msg)) return 'محاولات كتير ورا بعض، استنى دقيقة وحاول تاني';
   return msg;
 }
@@ -94,9 +95,11 @@ export const api = {
     if (!/^[a-z0-9_.]{3,30}$/.test(username)) {
       throw new Error('اسم المستخدم لازم يكون بالإنجليزي (حروف وأرقام) ومن 3 حروف على الأقل');
     }
-    if ((password || '').length < 6) throw new Error('كلمة المرور لازم تكون 6 حروف أو أرقام على الأقل');
+    if ((password || '').length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل');
+    // دعوة لمرة واحدة من المدير — من غيرها قاعدة البيانات بترفض إنشاء أي حساب
+    const { invite } = await this.rpc('create_invite', { username });
     if (DEV) {
-      const j = await devPost('/dev/register', { username, full_name: fullName });
+      const j = await devPost('/dev/register', { username, full_name: fullName, invite });
       return j.uid;
     }
     const { createClient } = await loadLib();
@@ -104,7 +107,7 @@ export const api = {
       auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false, storageKey: 'alagamy-new-user' },
     });
     const { data, error } = await tmp.auth.signUp({
-      email: email(username), password, options: { data: { username, full_name: fullName } },
+      email: email(username), password, options: { data: { username, full_name: fullName, invite } },
     });
     if (error) throw new Error(friendly(error.message));
     if (!data.user?.id || (data.user.identities && data.user.identities.length === 0)) {
@@ -113,7 +116,15 @@ export const api = {
     return data.user.id;
   },
 
+  async setupNeeded() {
+    if (DEV) return (await devPost('/dev/setup_needed', {})).needed;
+    const c = await client();
+    const { data, error } = await c.rpc('setup_needed', { p: {} });
+    return !error && data === true;
+  },
+
   async changePassword(newPassword) {
+    if ((newPassword || '').length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل');
     if (DEV) return;
     const c = await client();
     const { error } = await c.auth.updateUser({ password: newPassword });

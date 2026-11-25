@@ -10,6 +10,7 @@ import * as rep from './pages/reports.js';
 import * as set from './pages/settings.js';
 import * as login from './pages/login.js';
 import * as acct from './pages/accountants.js';
+import { autoBackup } from './backup.js';
 
 export const app = {
   me: null, settings: null, crate_types: [], items: [], pending: 0,
@@ -156,12 +157,16 @@ export async function start() {
     if (!app.me.active) return pendingScreen();
     shell();
     route();
+    // برنامج الويندوز: نسخة Excel تلقائية كل 24 ساعة
+    autoBackup(app);
+    if (!window.__backupTimer) window.__backupTimer = setInterval(() => autoBackup(app), 60 * 60 * 1000);
     if (app.can('approve')) {
       api.rpc('dashboard').then((d) => app.setPending(d.pending)).catch(() => {});
     }
   } catch (e) {
     if (/تسجل دخول|الجلسة|غير موجود/.test(e.message)) { await api.logout(); return login.render(start); }
-    document.body.innerHTML = `<div class="empty" style="padding-top:20vh"><b>مش قادر أوصل للسيرفر</b>${esc(e.message)}<br><br><button class="btn primary" onclick="location.reload()">حاول تاني</button></div>`;
+    document.body.innerHTML = `<div class="empty" style="padding-top:20vh"><b>مش قادر أوصل للسيرفر</b>${esc(e.message)}<br><br><button class="btn primary" data-reload>حاول تاني</button></div>`;
+    document.querySelector('[data-reload]').onclick = () => location.reload();
   }
 }
 

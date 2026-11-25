@@ -1,11 +1,12 @@
 import { api } from '../api.js';
+import { desktop, hostCall, saveToFolder, downloadBackup } from '../backup.js';
 import { esc, money, moneyT, n, icon, ok, err, busy, modal, formData, tag, PERMS, emptyState, todayISO, dateT } from '../ui.js';
 
 export async function render({ app, el, query }) {
   const tabs = [
     ['shop', 'بيانات المحل', 'settings'], ['crates', 'الصناديق والرهن', 'settings'], ['items', 'الأصناف', 'settings'],
     ['users', 'المستخدمين والصلاحيات', 'users'], ['backup', 'النسخة الاحتياطية', 'backup'],
-  ].filter((t) => app.can(t[2]));
+  ].filter((t) => (t[2] === 'users' ? app.me.role === 'admin' : app.can(t[2])));
   let tab = tabs.find((t) => t[0] === query.tab)?.[0] || tabs[0][0];
   el.innerHTML = `<div class="page-head"><h1>الإعدادات</h1></div>
     <div class="tabs" id="tabs">${tabs.map((t) => `<button data-t="${t[0]}">${t[1]}</button>`).join('')}</div><div id="body"></div>`;
@@ -114,7 +115,7 @@ async function users(app, body, query) {
       title: isNew ? 'إضافة مستخدم جديد' : 'صلاحيات ' + (u.full_name || u.username), wide: true,
       body: `<form class="grid" id="f">
         ${isNew ? `<div class="grid g2"><label class="f">اسم الدخول (بالإنجليزي)<input class="in" name="username" dir="ltr" autocapitalize="none" placeholder="مثلاً: mona"></label>
-          <label class="f">كلمة المرور (6 على الأقل)<input class="in" name="password" dir="ltr" placeholder="ابعتها للمحاسب"></label></div>` : ''}
+          <label class="f">كلمة المرور (8 على الأقل)<input class="in" name="password" dir="ltr" placeholder="ابعتها للمحاسب"></label></div>` : ''}
         <div class="grid g3"><label class="f">الاسم<input class="in" name="full_name" value="${esc(u.full_name)}"></label>
         <label class="f">النوع<select class="in" name="role" ${self ? 'disabled' : ''}><option value="accountant" ${u.role !== 'admin' ? 'selected' : ''}>محاسب</option>
           <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير (كل الصلاحيات)</option></select></label>
@@ -146,75 +147,31 @@ async function users(app, body, query) {
 }
 
 // ---------- النسخة الاحتياطية ----------
-const SHEETS = {
-  customers: ['الزباين', { id: 'رقم', name: 'الاسم', phone: 'التليفون', address: 'العنوان', balance: 'الرصيد', credit_approved: 'مسموح آجل', credit_limit: 'حد الآجل', notes: 'ملاحظات', active: 'شغال', created_at: 'تاريخ الإضافة' }],
-  sales: ['الفواتير', { id: 'id', sale_no: 'رقم الفاتورة', sale_date: 'التاريخ', customer_id: 'رقم الزبون', customer_name: 'اسم زبون نقدي', payment_type: 'الدفع', goods_total: 'البضاعة', deposit_total: 'الرهن', discount: 'خصم', grand_total: 'الإجمالي', paid_amount: 'المدفوع', approval_status: 'الموافقة', voided: 'ملغية', notes: 'ملاحظات' }],
-  sale_lines: ['سطور الفواتير', { id: 'id', sale_id: 'id الفاتورة', item_id: 'رقم الصنف', shipment_item_id: 'سطر النقلة', unit: 'الوحدة', qty: 'العدد', weight: 'الوزن', price: 'السعر', amount: 'القيمة', crate_type_id: 'نوع الصندوق', crates: 'الصناديق', deposit_amount: 'الرهن' }],
-  customer_payments: ['التحصيلات', { id: 'رقم', pay_date: 'التاريخ', customer_id: 'رقم الزبون', amount: 'المبلغ', notes: 'ملاحظات', voided: 'ملغية' }],
-  crate_returns: ['مرتجع الصناديق', { id: 'رقم', return_date: 'التاريخ', customer_id: 'رقم الزبون', crate_type_id: 'نوع الصندوق', count: 'العدد', amount: 'القيمة', method: 'الطريقة', notes: 'ملاحظات' }],
-  suppliers: ['الموردين', { id: 'رقم', name: 'الاسم', phone: 'التليفون', commission_pct: 'العمولة %', notes: 'ملاحظات', active: 'شغال' }],
-  shipments: ['النقلات', { id: 'رقم', supplier_id: 'رقم المورد', ship_date: 'التاريخ', truck: 'العربية', driver: 'السواق', freight: 'النولون', unloading: 'الدخان', other_expenses: 'مصاريف أخرى', settlement_id: 'رقم فاتورة المورد', notes: 'ملاحظات' }],
-  shipment_items: ['أصناف النقلات', { id: 'id', shipment_id: 'رقم النقلة', item_id: 'رقم الصنف', qty: 'العدد' }],
-  settlements: ['فواتير الموردين', { id: 'id', settle_no: 'رقم الفاتورة', supplier_id: 'رقم المورد', created_at: 'التاريخ', gross_sales: 'المبيعات', commission_pct: 'العمولة %', commission_amount: 'العمولة', freight: 'النولون', unloading: 'الدخان', other_expenses: 'مصاريف', net_amount: 'الصافي', status: 'الحالة', total_weight: 'الوزن', total_qty: 'العدد' }],
-  cash_movements: ['العهدة', { id: 'رقم', mv_date: 'التاريخ', created_at: 'الوقت', direction: 'وارد/منصرف', amount: 'المبلغ', category: 'النوع', description: 'البيان', party: 'الجهة' }],
-  items: ['الأصناف', { id: 'رقم', name: 'الاسم', default_unit: 'الوحدة', active: 'شغال' }],
-  crate_types: ['الصناديق', { id: 'رقم', name: 'الاسم', deposit: 'الرهن', active: 'شغال' }],
-  users: ['المستخدمين', { username: 'اسم الدخول', full_name: 'الاسم', role: 'النوع', active: 'شغال', created_at: 'تاريخ الإنشاء' }],
-};
-
-function loadScript(src) {
-  return new Promise((res, rej) => {
-    const s = document.createElement('script');
-    s.src = src; s.onload = res; s.onerror = rej;
-    document.head.append(s);
-  });
-}
-// أداة Excel: من نسخة جوه البرنامج لو موجودة، وإلا من النت
-async function loadXLSX() {
-  if (window.XLSX) return window.XLSX;
-  try { await loadScript('js/vendor/xlsx.full.min.js'); }
-  catch {
-    try { await loadScript('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js'); }
-    catch { throw new Error('مش قادر أحمّل أداة Excel — اتأكد من النت'); }
-  }
-  return window.XLSX;
-}
-
 async function backup(app, body) {
-  const last = localStorage.getItem('last_backup');
-  body.innerHTML = `<div class="panel"><div class="pb grid" style="max-width:640px">
-    <p style="margin:0">كل بياناتك محفوظة أونلاين، ومش بتضيع لو الكمبيوتر باظ. النسخة دي زيادة أمان: ملف Excel فيه كل حاجة (الزباين والفواتير والتحصيلات والنقلات والتصفيات والعهدة)، وتقدر تفتحه وتقراه على أي جهاز.</p>
-    <p class="muted small" style="margin:0">آخر نسخة نزلت من الجهاز ده: ${last ? new Date(+last).toLocaleString('ar-EG') : 'لسه مفيش'}</p>
-    <div class="row"><button class="btn primary lg" id="x">${icon('download')} تنزيل نسخة Excel</button><button class="btn lg" id="j">نسخة JSON كاملة</button></div>
-    <p class="muted small" style="margin:0">احفظ الملف على فلاشة أو Google Drive أو ابعته لنفسك على الواتساب.</p>
+  const desk = desktop ? await hostCall('backup-config').catch(() => null) : null;
+  body.innerHTML = `<div class="panel"><div class="pb grid" style="max-width:720px">
+    <p style="margin:0">كل بياناتك محفوظة أونلاين في قاعدة البيانات. النسخة دي زيادة أمان: 3 ملفات Excel بالأسماء مش بالأرقام، تتفتح على أي جهاز من غير البرنامج:</p>
+    <ul style="margin:0;padding-inline-start:20px;line-height:1.9">
+      <li><b>كل البيانات</b>: الزباين، فواتير البيع وتفاصيلها، التحصيلات، الصناديق، النقلات، فواتير العملاء، العهدة لدى العملاء، حركة الفلوس، عهد المحاسبين.</li>
+      <li><b>الزمامات</b>: كل زبون عليه فلوس، متأخر كام يوم، الضامن والتقييم.</li>
+      <li><b>العملاء</b>: ملخص كل عميل، كل فواتيره ونقلاته ومقدماته، وصفحة لكل عميل لوحده.</li>
+    </ul>
+    ${desk ? `<div class="alert info">
+        <b>الحفظ التلقائي شغال</b> — البرنامج بيحفظ الملفات التلاتة لوحده كل 24 ساعة في:<br>
+        <div dir="ltr" style="text-align:left;word-break:break-all;font-weight:600">${esc(desk.dir || "لسه مفيش فولدر")}</div>
+        آخر حفظ: <b>${desk.last ? new Date(desk.last).toLocaleString('ar-EG') : 'لسه مفيش'}</b> — وبيحتفظ بنسخة كل يوم في فولدر "نسخ قديمة" لمدة 60 يوم.
+      </div>
+      <div class="row"><button class="btn primary lg" id="now">${icon('download')} احفظ دلوقتي</button>
+        <button class="btn lg" id="dir">غيّر مكان الحفظ</button><button class="btn lg" id="open">افتح الفولدر</button></div>`
+    : `<div class="row"><button class="btn primary lg" data-k="">${icon('download')} نزّل الـ 3 ملفات</button>
+        <button class="btn lg" data-k="all">كل البيانات بس</button><button class="btn lg" data-k="zimam">الزمامات بس</button><button class="btn lg" data-k="suppliers">العملاء بس</button></div>
+      <p class="muted small" style="margin:0">في برنامج الويندوز الملفات بتتحفظ لوحدها كل 24 ساعة في الفولدر اللي تختاره.</p>`}
   </div></div>`;
-  const name = `العجمي-نسخة-احتياطية-${todayISO()}`;
-  body.querySelector('#x').onclick = (e) => busy(e.currentTarget, async () => {
-    const [X, data] = await Promise.all([loadXLSX(), api.rpc('export_all')]);
-    const wb = X.utils.book_new();
-    wb.Workbook = { Views: [{ RTL: true }] };
-    for (const [key, [sheet, cols]] of Object.entries(SHEETS)) {
-      const rows = (data[key] || []).map((r) => Object.fromEntries(Object.entries(cols).map(([k, label]) => {
-        let v = r[k];
-        if (typeof v === 'boolean') v = v ? 'نعم' : 'لا';
-        else if (v !== null && v !== '' && !isNaN(v) && typeof v !== 'object' && !/date|_at|phone|name|notes/.test(k)) v = Number(v);
-        return [label, v ?? ''];
-      })));
-      const ws = X.utils.json_to_sheet(rows.length ? rows : [Object.fromEntries(Object.values(cols).map((l) => [l, '']))]);
-      ws['!cols'] = Object.values(cols).map((l) => ({ wch: Math.max(10, l.length + 4) }));
-      X.utils.book_append_sheet(wb, ws, sheet);
-    }
-    X.writeFile(wb, name + '.xlsx');
-    localStorage.setItem('last_backup', Date.now());
-    ok('نزلت النسخة الاحتياطية');
-  });
-  body.querySelector('#j').onclick = (e) => busy(e.currentTarget, async () => {
-    const data = await api.rpc('export_all');
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(new Blob([JSON.stringify(data, null, 1)], { type: 'application/json' }));
-    a.download = name + '.json'; a.click();
-    localStorage.setItem('last_backup', Date.now());
-  });
+  body.querySelectorAll('[data-k]').forEach((b) => b.onclick = () => busy(b, async () => { await downloadBackup(b.dataset.k || null); ok('نزلت النسخة الاحتياطية'); }));
+  const now = body.querySelector('#now'), dir = body.querySelector('#dir'), open = body.querySelector('#open');
+  if (now) now.onclick = () => busy(now, async () => { const r = await saveToFolder(); ok('اتحفظت في ' + r.dir); backup(app, body); });
+  if (dir) dir.onclick = () => busy(dir, async () => { const r = await hostCall('pick-folder'); if (r.dir) { ok('المكان الجديد: ' + r.dir); backup(app, body); } });
+  if (open) open.onclick = () => hostCall('open-folder').catch(err);
 }
 
 // ---------- حسابي ----------
@@ -227,7 +184,7 @@ export async function renderAccount({ app, el }) {
       <div><button class="btn primary" id="save">تغيير كلمة المرور</button></div></div></div>`;
   el.querySelector('#save').onclick = (e) => busy(e.currentTarget, async () => {
     const a = el.querySelector('#p1').value, b = el.querySelector('#p2').value;
-    if (a.length < 6) throw new Error('كلمة المرور لازم تكون 6 حروف أو أرقام على الأقل');
+    if (a.length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل');
     if (a !== b) throw new Error('الكلمتين مش زي بعض');
     await api.changePassword(a);
     ok('اتغيرت كلمة المرور');

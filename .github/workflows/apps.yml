@@ -40,9 +40,17 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: '8.0.x' }
       - name: Build Alagamy.exe
-        run: dotnet publish apps/windows/Alagamy.csproj -c Release -o out
+        run: dotnet publish apps/windows/Alagamy.csproj -c Release -o out -p:Version=1.0.${{ github.run_number }}
+      - name: Build AlagamySetup.exe (برنامج التسطيب)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile out/MicrosoftEdgeWebview2Setup.exe
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress | Out-Null }
+          & $iscc "/DMyVersion=1.0.${{ github.run_number }}" apps/windows/setup/alagamy.iss
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
       - uses: actions/upload-artifact@v4
-        with: { name: windows, path: out/Alagamy.exe }
+        with: { name: windows, path: "out/Alagamy*.exe" }
 
   android:
     needs: vendor
@@ -86,6 +94,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag -R ${{ github.repository }} || true
-          gh release create latest dl/windows/Alagamy.exe dl/android/Alagamy.apk -R ${{ github.repository }} \
+          gh release create latest dl/windows/AlagamySetup.exe dl/windows/Alagamy.exe dl/android/Alagamy.apk -R ${{ github.repository }} \
             --title "العجمي — آخر نسخة" \
-            --notes "برنامج الويندوز (Alagamy.exe) وتطبيق الأندرويد (Alagamy.apk). بيتحدثوا لوحدهم مع كل تعديل."
+            --notes "برنامج التسطيب للويندوز (AlagamySetup.exe)، ونسخة بتشتغل من غير تسطيب (Alagamy.exe)، وتطبيق الأندرويد (Alagamy.apk)."

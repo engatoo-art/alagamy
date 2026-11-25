@@ -42,9 +42,13 @@ http.createServer(async (req, res) => {
         if (!r.length) return send(res, 400, { error: 'اسم المستخدم أو كلمة المرور غلط' });
         return send(res, 200, { uid: r[0] });
       }
+      if (req.url === '/dev/setup_needed') {
+        const r = await psql(`select not exists (select 1 from profiles)`);
+        return send(res, 200, { needed: r[0] === 't' });
+      }
       if (req.url === '/dev/register') {
         const r = await psql(`insert into auth.users(email, raw_user_meta_data) values (${lit(j.username + '@alagamy.app')},
-          ${lit(JSON.stringify({ username: j.username, full_name: j.full_name }))}::jsonb) returning id`);
+          ${lit(JSON.stringify({ username: j.username, full_name: j.full_name, invite: j.invite }))}::jsonb) returning id`);
         return send(res, 200, { uid: r[0] });
       }
       const fn = req.url.replace('/dev/rpc/', '');

@@ -13,7 +13,7 @@ export async function render({ app, el }) {
     <div class="panel"><div class="ph"><h2>طلبات تعديل وحذف من المحاسبين</h2></div>${p.requests.length ? `<div class="tbl-wrap"><table class="t">
       <thead><tr><th>الطلب</th><th>التفاصيل</th><th>السبب</th><th>المحاسب</th><th></th></tr></thead>
       <tbody>${p.requests.map((r) => `<tr><td><b>${esc(KIND[r.kind] || r.kind)}</b><div class="small muted">${date(r.created_at.slice(0, 10))}</div></td>
-        <td>${esc(r.summary)} ${r.kind.endsWith('sale') ? `<a class="small" href="#/sales/${r.target_id}">افتح الفاتورة</a>` : ''}</td>
+        <td>${r.details ? `<div style="white-space:pre-line"><b>${esc(r.details)}</b></div>` : esc(r.summary)} ${r.kind.endsWith('sale') ? `<a class="small" href="#/sales/${r.target_id}">افتح الفاتورة</a>` : ''}</td>
         <td class="small">${esc(r.reason)}</td><td class="small muted">${esc(r.by)}</td>
         <td class="row" style="flex-wrap:nowrap"><button class="btn sm primary" data-req="${r.id}" data-ok="1">موافقة وتنفيذ</button><button class="btn sm danger" data-req="${r.id}" data-ok="0">رفض</button></td></tr>`).join('')}</tbody></table></div>`
       : emptyState('مفيش طلبات', '')}</div>

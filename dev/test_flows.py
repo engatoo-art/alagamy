@@ -29,14 +29,27 @@ def expect_error(uid, fn, p, contains):
         return
     raise AssertionError(f"{fn} should have failed with {contains}")
 
-def new_user(username, full):
+def new_user(username, full, inviter=None, invite=None):
+    if inviter:
+        invite = call(inviter, "create_invite", {"username": username})["invite"]
+    inv = f',"invite":"{invite}"' if invite else ""
     return sql(f"""insert into auth.users(email, raw_user_meta_data) values ('{username}@alagamy.app',
-                '{{"username":"{username}","full_name":"{full}"}}') returning id""").splitlines()[0]
+                '{{"username":"{username}","full_name":"{full}"{inv}}}') returning id""").splitlines()[0]
 
 ok = lambda m: print("✔", m)
 
 admin = new_user("admin", "المدير")
-acc = new_user("ahmed", "أحمد المحاسب")
+# حد غريب يحاول يعمل حساب من غير دعوة المدير
+try:
+    new_user("hacker", "x"); raise AssertionError("signup without invite should fail")
+except RuntimeError as e:
+    assert "مقفول" in str(e), e
+try:
+    new_user("hacker2", "x", invite="000"); raise AssertionError("bad invite should fail")
+except RuntimeError as e:
+    assert "مقفول" in str(e), e
+ok("محدش يقدر يعمل حساب من غير دعوة من المدير")
+acc = new_user("ahmed", "أحمد المحاسب", inviter=admin)
 me = call(admin, "app_bootstrap")
 assert me["me"]["role"] == "admin" and me["me"]["active"], me
 ok("أول مستخدم بقى مدير ومتفعّل")
@@ -53,6 +66,11 @@ assert float(sh["opening_amount"]) == 0
 ok("المحاسب فتح عهدته")
 expect_error(acc, "save_settings", {"shop_name": "x"}, "صلاحية")
 expect_error(admin, "save_user", {"id": admin, "role": "accountant"}, "مينفعش")
+call(admin, "save_user", {"id": acc, "perms": {**perms, "users": True}})
+expect_error(acc, "save_user", {"id": acc, "role": "admin"}, "للمدير بس")
+expect_error(acc, "create_invite", {"username": "x123"}, "للمدير بس")
+call(admin, "save_user", {"id": acc, "perms": perms})
+ok("محاسب معاه صلاحية المستخدمين مايقدرش يخلي نفسه مدير")
 
 crates = {c["name"]: c for c in call(admin, "app_bootstrap")["crate_types"]}
 big = crates["صندوق بلاستيك كبير"]["id"]
@@ -177,7 +195,7 @@ ok("كل دوال العرض شغالة")
 call(acc, "add_cash", {"direction": "in", "category": "funding", "amount": 10000, "description": "تمويل"})
 cur = call(acc, "current_shift")
 exp = float(cur["shift"]["opening_amount"]) + float(cur["shift"]["live_in"]) - float(cur["shift"]["live_out"])
-mate = new_user("mona", "منى")
+mate = new_user("mona", "منى", inviter=admin)
 call(admin, "save_user", {"id": mate, "active": True, "perms": {"sales": True, "collections": True}})
 expect_error(mate, "open_shift", {}, "مفتوحة باسم")
 expect_error(mate, "add_payment", {"customer_id": cust["id"], "amount": 5}, "مفتوحة دلوقتي باسم")

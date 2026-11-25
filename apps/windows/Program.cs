@@ -1,35 +1,102 @@
 using System.Reflection;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Web.WebView2.WinForms;
+using Microsoft.Win32;
 
 namespace Alagamy;
 
 internal static class Program
 {
+    public const string AppName = "محل عبده العجمي وأولاده محمد وعبدالرحمن";
+
     [STAThread]
     private static void Main()
     {
+        // نسخة واحدة بس من البرنامج تشتغل في نفس الوقت
+        using var mutex = new Mutex(true, "Alagamy.Accounts.SingleInstance", out bool first);
+        if (!first)
+        {
+            MessageBox.Show("البرنامج مفتوح بالفعل.", AppName, MessageBoxButtons.OK, MessageBoxIcon.Information,
+                MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+            return;
+        }
         ApplicationConfiguration.Initialize();
         Application.Run(new MainForm());
     }
 }
 
+/// <summary>إعدادات البرنامج على الجهاز: مكان حفظ ملفات Excel وآخر مرة اتحفظت</summary>
+internal static class Prefs
+{
+    private const string Key = @"Software\Alagamy";
+    public static readonly string[] AllowedFiles = { "العجمي - كل البيانات.xlsx", "العجمي - الزمامات.xlsx", "العجمي - العملاء.xlsx" };
+
+    private static string Get(string name)
+    {
+        try
+        {
+            using var k = Registry.CurrentUser.OpenSubKey(Key);
+            if (k?.GetValue(name) is string v && v.Length > 0) return v;
+            using var m = Registry.LocalMachine.OpenSubKey(Key); // اللي اتكتب وقت التسطيب
+            if (m?.GetValue(name) is string mv && mv.Length > 0) return mv;
+        }
+        catch { }
+        return null;
+    }
+
+    private static void Set(string name, string value)
+    {
+        using var k = Registry.CurrentUser.CreateSubKey(Key);
+        k.SetValue(name, value);
+    }
+
+    public static string BackupDir
+    {
+        get
+        {
+            var d = Get("BackupDir");
+            if (d != null) return d;
+            // ملف جنب البرنامج بيكتبه برنامج التسطيب
+            try
+            {
+                var f = Path.Combine(AppContext.BaseDirectory, "backup-folder.txt");
+                if (File.Exists(f)) { var t = File.ReadAllText(f).Trim(); if (t.Length > 0) return t; }
+            }
+            catch { }
+            return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyDocuments), "العجمي - نسخ احتياطية");
+        }
+        set => Set("BackupDir", value);
+    }
+
+    public static DateTime? LastBackup
+    {
+        get => DateTime.TryParse(Get("LastBackup"), null, System.Globalization.DateTimeStyles.RoundtripKind, out var d) ? d : null;
+        set => Set("LastBackup", value?.ToString("o") ?? "");
+    }
+}
+
 /// <summary>
-/// برنامج ويندوز مستقل: صفحات البرنامج جوه الملف نفسه، والبيانات بتتحفظ في قاعدة البيانات أونلاين
+/// برنامج ويندوز مستقل: صفحات البرنامج جوه الملف نفسه، والبيانات بتتحفظ في قاعدة البيانات أونلاين،
+/// ونسخة Excel بتتحفظ على الجهاز كل 24 ساعة
 /// </summary>
 public class MainForm : Form
 {
     private const string Host = "app.alagamy.local";
+    private const string Origin = "https://" + Host + "/";
     private readonly WebView2 _web = new() { Dock = DockStyle.Fill };
     private readonly string _root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Alagamy");
 
     public MainForm()
     {
-        Text = "العجمي للخضروات والفاكهة";
+        Text = Program.AppName;
         Size = new Size(1360, 860);
         MinimumSize = new Size(900, 600);
         StartPosition = FormStartPosition.CenterScreen;
         WindowState = FormWindowState.Maximized;
+        RightToLeft = RightToLeft.Yes;
+        RightToLeftLayout = true;
         try { Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath); } catch { }
         BackColor = Color.FromArgb(244, 246, 241);
         Controls.Add(_web);
@@ -46,6 +113,7 @@ public class MainForm : Form
         {
             if (!name.StartsWith("site/")) continue;
             string rel = name.Substring(5).Replace('\\', '/');
+            if (rel.Contains("..")) continue;
             string path = Path.Combine(site, rel.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             using var src = asm.GetManifestResourceStream(name)!;
@@ -53,6 +121,15 @@ public class MainForm : Form
             src.CopyTo(dst);
         }
         return site;
+    }
+
+    private static void OpenExternal(string uri)
+    {
+        // بنفتح بس لينكات النت العادية في المتصفح — أي حاجة تانية بتترفض
+        if (Uri.TryCreate(uri, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp))
+        {
+            try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(u.AbsoluteUri) { UseShellExecute = true }); } catch { }
+        }
     }
 
     private async Task StartAsync()
@@ -67,13 +144,27 @@ public class MainForm : Form
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.AreDefaultContextMenusEnabled = true;
-            // أي رابط خارجي يفتح في المتصفح العادي
-            core.NewWindowRequested += (s, e) =>
+            core.Settings.IsGeneralAutofillEnabled = false;
+            core.Settings.IsPasswordAutosaveEnabled = false;
+            core.Settings.AreHostObjectsAllowed = false;
+
+            // البرنامج مايفتحش أي صفحة غير صفحاته هو
+            core.NavigationStarting += (s, e) =>
             {
-                e.Handled = true;
-                try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(e.Uri) { UseShellExecute = true }); } catch { }
+                if (e.Uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase) || e.Uri == "about:blank") return;
+                e.Cancel = true;
+                OpenExternal(e.Uri);
             };
-            core.Navigate($"https://{Host}/index.html");
+            core.FrameNavigationStarting += (s, e) =>
+            {
+                if (e.Uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase) || e.Uri.StartsWith("about:")) return;
+                e.Cancel = true;
+            };
+            core.NewWindowRequested += (s, e) => { e.Handled = true; OpenExternal(e.Uri); };
+            core.PermissionRequested += (s, e) => e.State = CoreWebView2PermissionState.Deny;
+            core.WebMessageReceived += OnMessage;
+
+            core.Navigate(Origin + "index.html");
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -81,8 +172,7 @@ public class MainForm : Form
                 "البرنامج محتاج مكوّن من مايكروسوفت اسمه WebView2 (مجاني وبيتسطّب في دقيقة).\n\nتحب تفتح صفحة التحميل دلوقتي؟",
                 Text, MessageBoxButtons.YesNo, MessageBoxIcon.Information, MessageBoxDefaultButton.Button1,
                 MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
-            if (r == DialogResult.Yes)
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("https://go.microsoft.com/fwlink/p/?LinkId=2124703") { UseShellExecute = true });
+            if (r == DialogResult.Yes) OpenExternal("https://go.microsoft.com/fwlink/p/?LinkId=2124703");
             Close();
         }
         catch (Exception ex)
@@ -91,5 +181,101 @@ public class MainForm : Form
                 MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
             Close();
         }
+    }
+
+    // ===================== الكلام بين صفحات البرنامج والويندوز =====================
+    private void Reply(JsonNode msg, JsonObject data)
+    {
+        data["id"] = msg?["id"]?.GetValue<int>() ?? 0;
+        _web.CoreWebView2.PostWebMessageAsJson(data.ToJsonString());
+    }
+
+    private void OnMessage(object sender, CoreWebView2WebMessageReceivedEventArgs e)
+    {
+        // بنقبل رسايل من صفحات البرنامج بس
+        if (!e.Source.StartsWith(Origin, StringComparison.OrdinalIgnoreCase)) return;
+        JsonNode msg = null;
+        try
+        {
+            msg = JsonNode.Parse(e.WebMessageAsJson);
+            switch (msg?["type"]?.GetValue<string>())
+            {
+                case "backup-config":
+                    var last = Prefs.LastBackup;
+                    Reply(msg, new JsonObject
+                    {
+                        ["dir"] = Prefs.BackupDir,
+                        ["last"] = last?.ToString("o"),
+                        ["due"] = last == null || DateTime.UtcNow - last.Value.ToUniversalTime() >= TimeSpan.FromHours(24),
+                    });
+                    break;
+                case "save-backup":
+                    Reply(msg, new JsonObject { ["dir"] = SaveBackup(msg["files"]!.AsArray()) });
+                    break;
+                case "pick-folder":
+                    using (var dlg = new FolderBrowserDialog
+                    {
+                        Description = "اختار الفولدر اللي ملفات Excel تتحفظ فيه",
+                        UseDescriptionForTitle = true,
+                        SelectedPath = Prefs.BackupDir,
+                        ShowNewFolderButton = true,
+                    })
+                    {
+                        string dir = null;
+                        if (dlg.ShowDialog(this) == DialogResult.OK && Directory.Exists(dlg.SelectedPath))
+                        {
+                            Prefs.BackupDir = dir = dlg.SelectedPath;
+                            Prefs.LastBackup = null; // يحفظ في المكان الجديد على طول
+                        }
+                        Reply(msg, new JsonObject { ["dir"] = dir });
+                    }
+                    break;
+                case "open-folder":
+                    Directory.CreateDirectory(Prefs.BackupDir);
+                    System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", "\"" + Prefs.BackupDir + "\"") { UseShellExecute = true });
+                    Reply(msg, new JsonObject());
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            try { Reply(msg, new JsonObject { ["error"] = ex.Message }); } catch { }
+        }
+    }
+
+    private static string SaveBackup(JsonArray files)
+    {
+        string dir = Prefs.BackupDir;
+        Directory.CreateDirectory(dir);
+        string archive = Path.Combine(dir, "نسخ قديمة", DateTime.Now.ToString("yyyy-MM-dd"));
+        Directory.CreateDirectory(archive);
+        foreach (var f in files)
+        {
+            string name = f?["name"]?.GetValue<string>() ?? "";
+            // أسماء الملفات ثابتة — أي اسم تاني بيترفض
+            if (Array.IndexOf(Prefs.AllowedFiles, name) < 0) throw new InvalidOperationException("اسم ملف مش مسموح");
+            byte[] bytes = Convert.FromBase64String(f["data"]!.GetValue<string>());
+            if (bytes.Length < 100 || bytes[0] != 'P' || bytes[1] != 'K') throw new InvalidOperationException("الملف مش Excel سليم");
+
+            File.WriteAllBytes(Path.Combine(archive, name), bytes);
+            string target = Path.Combine(dir, name);
+            string tmp = target + ".tmp";
+            File.WriteAllBytes(tmp, bytes);
+            try { File.Move(tmp, target, true); }
+            catch (IOException)
+            {
+                // الملف مفتوح في Excel: بنسيبه ونحفظ نسخة جنبه
+                File.Move(tmp, Path.Combine(dir, Path.GetFileNameWithoutExtension(name) + " (جديد).xlsx"), true);
+            }
+        }
+        // بنمسح النسخ اليومية الأقدم من 60 يوم
+        try
+        {
+            foreach (var old in Directory.GetDirectories(Path.Combine(dir, "نسخ قديمة")))
+                if (DateTime.TryParse(Path.GetFileName(old), out var d) && d < DateTime.Today.AddDays(-60)) Directory.Delete(old, true);
+        }
+        catch { }
+        Prefs.LastBackup = DateTime.UtcNow;
+        return dir;
     }
 }

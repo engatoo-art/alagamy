@@ -382,19 +382,62 @@ $$;
 
 -- ======================= المستخدمين الجدد ============================
 
+-- دعوات إنشاء الحسابات: محدش يقدر يعمل حساب إلا لو المدير عمله دعوة (صالحة 15 دقيقة ولمرة واحدة)
+create table if not exists public.user_invites (
+  username text primary key,
+  token text not null,
+  created_by uuid references public.profiles(id),
+  expires_at timestamptz not null default now() + interval '15 minutes'
+);
+
 create or replace function public.handle_new_user() returns trigger
 language plpgsql security definer set search_path = public as $$
-declare first_user boolean;
+declare first_user boolean; uname text; inv user_invites;
 begin
+  perform pg_advisory_xact_lock(4242);
   select not exists (select 1 from profiles) into first_user;
+  uname := lower(coalesce(nullif(new.raw_user_meta_data->>'username', ''), split_part(new.email, '@', 1)));
+  if not first_user then
+    select * into inv from user_invites where username = uname;
+    if not found or inv.expires_at < now() or inv.token is distinct from (new.raw_user_meta_data->>'invite') then
+      raise exception 'إنشاء الحسابات مقفول — المدير بس اللي يعمل حسابات من الإعدادات';
+    end if;
+    delete from user_invites where username = uname;
+  end if;
   insert into profiles(id, username, full_name, role, active)
-  values (new.id,
-          coalesce(nullif(new.raw_user_meta_data->>'username', ''), split_part(new.email, '@', 1)),
-          coalesce(new.raw_user_meta_data->>'full_name', ''),
-          case when first_user then 'admin' else 'accountant' end,
-          first_user)
+  values (new.id, uname, coalesce(new.raw_user_meta_data->>'full_name', ''),
+          case when first_user then 'admin' else 'accountant' end, first_user)
   on conflict (id) do nothing;
   return new;
+end $$;
+
+-- صفحة الدخول بتسأل: هل لسه محتاجين نعمل حساب المدير الأول؟
+create or replace function public.setup_needed(p jsonb default '{}'::jsonb) returns boolean
+language sql stable security definer set search_path = public as $$
+  select not exists (select 1 from profiles)
+$$;
+
+create or replace function public._need_admin() returns void
+language plpgsql stable security definer set search_path = public as $$
+begin
+  perform _need(null);
+  if not exists (select 1 from profiles where id = auth.uid() and active and role = 'admin') then
+    raise exception 'العملية دي للمدير بس';
+  end if;
+end $$;
+
+create or replace function public.create_invite(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uname text := lower(_t(p, 'username')); tok text;
+begin
+  perform _need_admin();
+  if uname !~ '^[a-z0-9_.]{3,30}$' then raise exception 'اسم المستخدم لازم يكون بالإنجليزي (حروف وأرقام) ومن 3 حروف على الأقل'; end if;
+  if exists (select 1 from profiles where username = uname) then raise exception 'اسم المستخدم ده موجود قبل كده، اختار اسم تاني'; end if;
+  delete from user_invites where expires_at < now();
+  tok := replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '');
+  insert into user_invites(username, token, created_by) values (uname, tok, auth.uid())
+  on conflict (username) do update set token = excluded.token, created_by = excluded.created_by, expires_at = now() + interval '15 minutes';
+  return jsonb_build_object('invite', tok);
 end $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
@@ -434,7 +477,8 @@ create or replace function public.save_user(p jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare uid uuid := (p->>'id')::uuid; r profiles;
 begin
-  perform _need('users');
+  perform _need_admin();
+  if coalesce(p->>'role', 'accountant') not in ('admin', 'accountant') then raise exception 'نوع الحساب غلط'; end if;
   select * into r from profiles where id = uid;
   if not found then raise exception 'المستخدم غير موجود'; end if;
   if uid = auth.uid() and (coalesce(p->>'role', r.role) <> 'admin' or coalesce((p->>'active')::boolean, true) = false) then
@@ -1450,6 +1494,42 @@ create table if not exists public.change_requests (
   decided_at timestamptz,
   decide_note text not null default ''
 );
+alter table public.change_requests add column if not exists details text not null default '';
+
+-- وصف الطلب بيتكتب من قاعدة البيانات نفسها (مش من اللي بعته المحاسب) علشان المدير يشوف اللي هيتنفذ فعلاً
+create or replace function public._change_details(k text, tid int, pl jsonb) returns text
+language plpgsql stable security definer set search_path = public as $$
+declare t text := ''; s sales; ln jsonb; l sale_lines;
+begin
+  if k in ('void_sale', 'edit_sale') then
+    select * into s from sales where id = tid;
+    if not found then raise exception 'الفاتورة غير موجودة'; end if;
+    t := 'فاتورة بيع رقم ' || s.sale_no || ' — ' || coalesce((select name from customers where id = s.customer_id), nullif(s.customer_name, ''), 'نقدي')
+         || ' — إجمالي ' || s.grand_total;
+    if k = 'void_sale' then return 'إلغاء ' || t; end if;
+    t := 'تعديل ' || t || ':';
+    for ln in select * from jsonb_array_elements(coalesce(pl->'lines', '[]')) loop
+      select * into l from sale_lines where id = _i(ln, 'id') and sale_id = tid;
+      if not found then raise exception 'سطر غير موجود في الفاتورة'; end if;
+      t := t || E'\n' || (select name from items where id = l.item_id)
+        || ' | العدد ' || l.qty || ' ← ' || _n(ln, 'qty', l.qty)
+        || ' | الوزن ' || l.weight || ' ← ' || _n(ln, 'weight', l.weight)
+        || ' | السعر ' || l.price || ' ← ' || _n(ln, 'price', l.price);
+    end loop;
+    return t;
+  elsif k = 'stock_adjust' then
+    return (select 'تعديل عدد ' || i.name || ' (' || sp.name || ' — نقلة ' || sh.ship_date || ') من ' || si.qty || ' إلى ' || _n(pl, 'qty', -1)
+            from shipment_items si join shipments sh on sh.id = si.shipment_id join suppliers sp on sp.id = sh.supplier_id
+            join items i on i.id = si.item_id where si.id = tid);
+  elsif k = 'delete_shipment' then
+    return (select 'حذف نقلة ' || sp.name || ' بتاريخ ' || sh.ship_date || coalesce(' (' || nullif(sh.truck, '') || ')', '')
+            from shipments sh join suppliers sp on sp.id = sh.supplier_id where sh.id = tid);
+  elsif k = 'void_payment' then
+    return (select 'إلغاء تحصيل ' || cp.amount || ' من ' || c.name || ' بتاريخ ' || cp.pay_date
+            from customer_payments cp join customers c on c.id = cp.customer_id where cp.id = tid);
+  end if;
+  return '';
+end $$;
 
 create or replace function public.request_change(p jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -1460,8 +1540,9 @@ begin
   if exists (select 1 from change_requests where kind = k and target_id = _i(p, 'target_id') and status = 'pending') then
     raise exception 'فيه طلب على نفس الحاجة لسه مستني موافقة المدير';
   end if;
-  insert into change_requests(kind, target_id, payload, summary, reason, requested_by)
-  values (k, _i(p, 'target_id'), coalesce(p->'payload', '{}'::jsonb), _t(p, 'summary'), _t(p, 'reason'), auth.uid())
+  insert into change_requests(kind, target_id, payload, summary, details, reason, requested_by)
+  values (k, _i(p, 'target_id'), coalesce(p->'payload', '{}'::jsonb), _t(p, 'summary'),
+          coalesce(_change_details(k, _i(p, 'target_id'), coalesce(p->'payload', '{}'::jsonb)), ''), _t(p, 'reason'), auth.uid())
   returning id into rid;
   return jsonb_build_object('id', rid);
 end $$;
@@ -1926,7 +2007,7 @@ declare t text;
 begin
   foreach t in array array['profiles','shop_settings','crate_types','items','suppliers','customers','settlements',
                            'shipments','shipment_items','sales','sale_lines','customer_payments','crate_returns','cash_movements',
-                           'cash_shifts','change_requests','supplier_advances']
+                           'cash_shifts','change_requests','supplier_advances','user_invites']
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from anon, authenticated', t);
@@ -1935,6 +2016,9 @@ end $$;
 
 revoke all on all sequences in schema public from anon, authenticated;
 revoke execute on all functions in schema public from public, anon, authenticated;
+alter default privileges in schema public revoke execute on functions from public, anon, authenticated;
+grant execute on function public.setup_needed(jsonb) to anon, authenticated;
+grant execute on function public.create_invite(jsonb) to authenticated;
 
 grant execute on function
   public.app_bootstrap(jsonb), public.list_users(jsonb), public.save_user(jsonb), public.save_settings(jsonb),
