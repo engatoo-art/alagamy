@@ -8,7 +8,7 @@ export function render(onDone) {
     <div class="login">
       <div class="art">
         <img src="img/logo.png" alt="">
-        <div><h1>العجمي<br>للخضروات والفاكهة</h1>
+        <div><h1>محل عبده العجمي<br>وأولاده محمد وعبدالرحمن</h1>
         <p>البيع والحسابات والنقلات والعهدة في مكان واحد، من المحل أو من البيت.</p></div>
         <span class="small" style="color:#8fb09d">حسابات المحل</span>
       </div>

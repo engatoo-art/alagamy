@@ -175,51 +175,98 @@ export function settlementDoc(st) {
   const title = s.invoice_title || 'محلات عبده العجمي وأولاده (محمد وعبدالرحمن)';
   const ded = [['النولون', st.freight], ['العمولة' + (n(st.commission_pct) ? ` (${qtyT(st.commission_pct)}%)` : ''), st.commission_amount],
     ['الدخان', st.unloading], [st.other_label || 'مصاريف أخرى', st.other_expenses]].filter(([, v]) => n(v));
+  const adv = n(st.advance_deducted);
   const css = `
-    .inv { padding: 10mm 12mm; }
-    .inv .hd { text-align: center; position: relative; }
-    .inv .hd img { width: 78px; height: 78px; display: block; margin: 0 auto 4px; }
-    .inv .hd h1 { font-size: 24px; margin: 0; }
+    .inv { padding: 9mm 12mm; display: flex; flex-direction: column; min-height: 275mm; }
+    .inv .hd { text-align: center; }
+    .inv .hd img { width: 74px; height: 74px; display: block; margin: 0 auto 4px; }
+    .inv .hd h1 { font-size: 23px; margin: 0; }
     .inv .hd h2 { font-size: 19px; margin: 6px 0 0; font-weight: 600; }
     .inv .hd h2 b { border-bottom: 2px solid #000; padding: 0 10px; }
-    .inv .meta { position: absolute; top: 0; left: 0; text-align: left; font-size: 12px; line-height: 1.7; }
-    .inv .box { display: grid; grid-template-columns: 34% 66%; border: 2px solid #000; border-radius: 6px; margin-top: 14px; min-height: 120mm; }
-    .inv .sum { border-inline-end: 2px solid #000; padding: 10px 12px; display: flex; flex-direction: column; }
-    .inv .sum .r { display: flex; justify-content: space-between; padding: 7px 0; font-size: 15px; border-bottom: 1px dashed #777; }
-    .inv .sum .r.tot { font-weight: 700; font-size: 16px; border-bottom: 1.5px solid #000; }
-    .inv .sum .r.net { margin-top: 10px; border: 2px solid #000; border-radius: 5px; padding: 10px 8px; font-size: 19px; font-weight: 700; }
-    .inv .det { padding: 0; }
-    .inv .det table th { border-bottom: 1.5px solid #000; padding: 7px 8px; font-size: 13.5px; text-align: center; background: #f1f1f1; }
-    .inv .det table td { padding: 6px 8px; font-size: 14px; text-align: center; border-bottom: 1px solid #ccc; }
-    .inv .det table td.it { text-align: right; font-weight: 600; }
-    .inv .det table tfoot td { border-top: 1.5px solid #000; border-bottom: 0; font-weight: 700; background: #f7f7f7; }
-    .inv .sig { display: flex; justify-content: space-between; margin-top: 28px; font-size: 13px; }
-    .inv .sig div { width: 30%; text-align: center; border-top: 1px solid #000; padding-top: 4px; }`;
+    .inv .mt { display: flex; justify-content: space-between; font-size: 12.5px; margin-top: 10px; border-top: 1px solid #000; border-bottom: 1px solid #000; padding: 5px 2px; }
+    .inv table.dt { width: 100%; border-collapse: collapse; margin-top: 12px; border: 2px solid #000; }
+    .inv table.dt th { border: 1px solid #000; padding: 7px 8px; font-size: 13.5px; text-align: center; background: #eee; }
+    .inv table.dt td { padding: 6px 8px; font-size: 14px; text-align: center; border: 1px solid #999; }
+    .inv table.dt td.it { text-align: right; font-weight: 600; }
+    .inv table.dt tfoot td { border-top: 2px solid #000; font-weight: 700; background: #f4f4f4; }
+    .inv .sum { width: 62%; margin: 14px 0 0 auto; margin-inline-start: 0; border: 2px solid #000; border-radius: 6px; padding: 6px 12px; }
+    .inv .sum .r { display: flex; justify-content: space-between; padding: 6px 0; font-size: 15px; border-bottom: 1px dashed #777; }
+    .inv .sum .r:last-child { border-bottom: 0; }
+    .inv .sum .r.tot { font-weight: 700; font-size: 16px; }
+    .inv .sum .r.net { font-weight: 700; font-size: 18px; border-top: 2px solid #000; border-bottom: 2px solid #000; margin-top: 2px; }
+    .inv .sum .r.pay { font-weight: 700; font-size: 19px; background: #eee; margin: 4px -12px -6px; padding: 9px 12px; border-radius: 0 0 4px 4px; }
+    .inv .sig { display: flex; justify-content: space-between; margin-top: 30px; font-size: 13px; }
+    .inv .sig div { width: 30%; text-align: center; border-top: 1px solid #000; padding-top: 4px; }
+    .inv .warn { margin-top: auto; padding-top: 16px; text-align: center; }
+    .inv .warn span { display: inline-block; border: 2px solid #000; border-radius: 6px; padding: 7px 22px; font-size: 16px; font-weight: 700; }`;
   printDoc(`<style>${css}</style><div class="inv">
-    <div class="hd">
-      <div class="meta">رقم <span class="num">${st.settle_no}</span><br>${dateT(String(st.created_at).slice(0, 10))}
-        ${st.shipments.length ? `<br>النقلة: ${st.shipments.map((x) => dateT(x.ship_date) + (x.truck ? ' (' + esc(x.truck) + ')' : '')).join('، ')}` : ''}</div>
-      ${logo()}
-      <h1>${esc(title)}</h1>
-      <h2>فاتورة <b>${esc(st.supplier.name)}</b></h2>
-    </div>
-    <div class="box">
-      <div class="sum">
-        <div class="r tot"><span>المجموع</span><span>${m(st.gross_sales)}</span></div>
-        ${ded.map(([k, v]) => `<div class="r"><span>${esc(k)}</span><span>- ${m(v)}</span></div>`).join('')}
-        <div class="r net"><span>الصافي</span><span>${m(st.net_amount)}</span></div>
-        <div style="margin-top:auto;font-size:12px;padding-top:10px">الوزن الكلي: <b>${q(st.total_weight)}</b> ك<br>العدد الكلي: <b>${q(st.total_qty)}</b></div>
-      </div>
-      <div class="det"><table>
-        <thead><tr><th>العدد</th><th>الصنف</th><th>الوزن</th><th>السعر</th><th>المجموع</th></tr></thead>
-        <tbody>${lines.map((l) => `<tr><td>${q(l.qty)}</td><td class="it">${esc(l.item)}</td>
-          <td>${l.unit === 'kg' ? q(l.weight) : '—'}</td><td>${m(l.price)}</td><td>${m(l.amount)}</td></tr>`).join('')}</tbody>
-        <tfoot><tr><td>${q(st.total_qty)}</td><td class="it">الإجمالي</td><td>${q(st.total_weight)}</td><td></td><td>${m(st.gross_sales)}</td></tr></tfoot>
-      </table></div>
+    <div class="hd">${logo()}<h1>${esc(title)}</h1><h2>فاتورة <b>${esc(st.supplier.name)}</b></h2></div>
+    <div class="mt"><span>رقم الفاتورة: <b class="num">${st.settle_no}</b></span><span>التاريخ: ${dateT(String(st.created_at).slice(0, 10))}</span>
+      ${st.shipments.length ? `<span>النقلة: ${st.shipments.map((x) => dateT(x.ship_date) + (x.truck ? ' (' + esc(x.truck) + ')' : '')).join('، ')}</span>` : ''}</div>
+    <table class="dt">
+      <thead><tr><th>العدد</th><th>الصنف</th><th>الوزن</th><th>السعر</th><th>المجموع</th></tr></thead>
+      <tbody>${lines.map((l) => `<tr><td>${q(l.qty)}</td><td class="it">${esc(l.item)}</td>
+        <td>${l.unit === 'kg' ? q(l.weight) : '—'}</td><td>${m(l.price)}</td><td>${m(l.amount)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td>${q(st.total_qty)}</td><td class="it">الإجمالي</td><td>${q(st.total_weight)}</td><td></td><td>${m(st.gross_sales)}</td></tr></tfoot>
+    </table>
+    <div class="sum">
+      <div class="r tot"><span>المجموع</span><span>${m(st.gross_sales)}</span></div>
+      ${ded.map(([k, v]) => `<div class="r"><span>${esc(k)}</span><span>- ${m(v)}</span></div>`).join('')}
+      <div class="r net"><span>الصافي</span><span>${m(st.net_amount)}</span></div>
+      ${adv ? `<div class="r"><span>خصم من العهدة لدى العميل</span><span>- ${m(adv)}</span></div>
+      <div class="r pay"><span>المطلوب صرفه</span><span>${m(n(st.net_amount) - adv)}</span></div>` : ''}
     </div>
     ${st.notes ? `<p style="font-size:13px">ملاحظات: ${esc(st.notes)}</p>` : ''}
     <div class="sig"><div>المحاسب</div><div>المدير</div><div>توقيع العميل بالاستلام</div></div>
+    <div class="warn"><span>يرجى مراجعة النقدية قبل مغادرة المحل</span></div>
   </div>`, { size: 'A4', title: 'فاتورة ' + st.supplier.name });
+}
+
+// ---------- كشف فواتير عميل (مورد) ----------
+export function supplierStatementDoc(r, s) {
+  const t = r.totals;
+  printDoc(`<div class="a4">${headA4(s, 'كشف فواتير', null, `من ${dateT(r.from)} إلى ${dateT(r.to)}`)}
+    <h2 style="margin:6px 0">العميل: ${esc(r.supplier.name)}</h2>
+    <div class="grid"><div><small>عدد الفواتير</small><b>${q(t.count)}</b></div><div><small>إجمالي البيع</small><b>${m(t.gross)}</b></div>
+      <div><small>الصافي</small><b>${m(t.net)}</b></div><div><small>اتصرف</small><b>${m(t.paid)}</b></div></div>
+    <div class="grid" style="margin-top:8px"><div><small>العمولة</small><b>${m(t.commission)}</b></div><div><small>النولون</small><b>${m(t.freight)}</b></div>
+      <div><small>الدخان</small><b>${m(t.smoke)}</b></div><div><small>مخصوم من العهدة</small><b>${m(t.advance)}</b></div></div>
+    <table class="d" style="margin-top:12px"><thead><tr><th>رقم</th><th>التاريخ</th><th>الوزن</th><th>البيع</th><th>العمولة</th><th>النولون</th><th>الدخان</th><th>أخرى</th><th>الصافي</th><th>من العهدة</th><th>الحالة</th></tr></thead>
+    <tbody>${r.invoices.map((x) => `<tr><td>${x.settle_no}</td><td>${dateT(x.date)}</td><td>${q(x.weight)}</td><td>${m(x.gross)}</td><td>${m(x.commission)}</td>
+      <td>${m(x.freight)}</td><td>${m(x.smoke)}</td><td>${m(x.other)}</td><td><b>${m(x.net)}</b></td><td>${n(x.advance) ? m(x.advance) : ''}</td><td>${x.status === 'paid' ? 'اتصرفت' : 'لسه'}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td colspan="2">الإجمالي (${q(t.count)})</td><td>${q(t.weight)}</td><td>${m(t.gross)}</td><td>${m(t.commission)}</td><td>${m(t.freight)}</td><td>${m(t.smoke)}</td><td>${m(t.other)}</td><td>${m(t.net)}</td><td>${m(t.advance)}</td><td></td></tr></tfoot></table>
+    <p>رصيد العهدة لدى العميل حالياً: <b>${m(r.advance_balance)}</b> — المتبقي له من الفواتير: <b>${m(t.due)}</b></p>
+    <div class="sign"><div>المحاسب</div><div>المدير</div><div>العميل</div></div></div>`, { size: 'A4', title: 'كشف ' + r.supplier.name });
+}
+
+// ---------- تفاصيل عهدة محاسب ----------
+export function shiftDetailDoc(r) {
+  const s = r.settings; const closed = r.status === 'closed'; const st = r.sales_totals;
+  const tin = closed ? r.total_in : r.live_in, tout = closed ? r.total_out : r.live_out;
+  const exp = closed ? r.expected_amount : n(r.opening_amount) + n(tin) - n(tout);
+  const d = n(r.difference);
+  const when = (ts) => ts ? new Date(ts).toLocaleString('en-GB', { timeZone: 'Africa/Cairo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
+  printDoc(`<div class="a4">${headA4(s, 'تفاصيل عهدة', r.id, esc(r.user_name))}
+    <table class="meta"><tr><td>فتحها: ${when(r.opened_at)}</td><td class="l">قفلها: ${closed ? when(r.closed_at) : 'لسه مفتوحة'}</td></tr></table>
+    <div class="grid"><div><small>أول العهدة</small><b>${m(r.opening_amount)}</b></div><div><small>دخل</small><b>${m(tin)}</b></div>
+      <div><small>خرج</small><b>${m(tout)}</b></div><div><small>المفروض</small><b>${m(exp)}</b></div></div>
+    <div class="grid" style="margin-top:8px"><div><small>الفعلي</small><b>${closed ? m(r.counted_amount) : '—'}</b></div>
+      <div><small>${d < 0 ? 'عجز' : d > 0 ? 'زيادة' : 'الفرق'}</small><b>${closed ? (d ? m(Math.abs(d)) : 'مظبوطة') : '—'}</b></div>
+      <div><small>فواتير البيع</small><b>${q(st.count)} — ${m(st.total)}</b></div><div><small>رهن الصناديق</small><b>${m(st.deposit)}</b></div></div>
+    <h3>باع إيه</h3>
+    <table class="d"><thead><tr><th>الصنف</th><th>العدد</th><th>الوزن</th><th>المجموع</th></tr></thead>
+    <tbody>${r.items.map((x) => `<tr><td>${esc(x.item)}</td><td>${q(x.qty)}</td><td>${q(x.weight)}</td><td>${m(x.amount)}</td></tr>`).join('')}</tbody></table>
+    <h3>الفواتير</h3>
+    <table class="d"><thead><tr><th>الوقت</th><th>رقم</th><th>الزبون</th><th>الأصناف</th><th>الدفع</th><th>الرهن</th><th>الإجمالي</th><th>اتقبض</th></tr></thead>
+    <tbody>${r.sales.map((x) => `<tr${x.voided ? ' style="text-decoration:line-through"' : ''}><td>${x.time}</td><td>${x.sale_no}</td><td>${esc(x.customer)}</td>
+      <td style="text-align:right">${x.lines.map((l) => `${esc(l.item)} ${l.unit === 'kg' ? q(l.weight) + 'ك' : q(l.qty)} × ${m(l.price)} = ${m(l.amount)}${l.crates ? ` (+${l.crates} ${esc(l.crate || 'صندوق')})` : ''}`).join('<br>')}</td>
+      <td>${x.payment_type === 'cash' ? 'نقدي' : 'آجل'}</td><td>${n(x.deposit) ? m(x.deposit) : ''}</td><td>${m(x.total)}</td><td>${m(x.paid)}</td></tr>`).join('')}</tbody></table>
+    <h3>حركة الفلوس</h3>
+    <table class="d"><thead><tr><th>الوقت</th><th>النوع</th><th>البيان</th><th>دخل</th><th>خرج</th></tr></thead>
+    <tbody>${r.movements.map((x) => `<tr><td>${x.time}</td><td>${CASH_CAT[x.category] || x.category}</td><td>${esc(x.description)}</td>
+      <td>${x.direction === 'in' ? m(x.amount) : ''}</td><td>${x.direction === 'out' ? m(x.amount) : ''}</td></tr>`).join('')}</tbody></table>
+    ${r.reviewed_at ? `<p>تمت المراجعة بواسطة ${esc(r.reviewed_by_name || '')}${r.review_note ? ' — ' + esc(r.review_note) : ''}</p>` : ''}
+    <div class="sign"><div>المحاسب: ${esc(r.user_name)}</div><div>المستلم</div><div>المدير</div></div></div>`, { size: 'A4', title: 'عهدة ' + r.id });
 }
 
 // ---------- العهدة ----------

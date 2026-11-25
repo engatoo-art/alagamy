@@ -9,6 +9,7 @@ import * as appr from './pages/approvals.js';
 import * as rep from './pages/reports.js';
 import * as set from './pages/settings.js';
 import * as login from './pages/login.js';
+import * as acct from './pages/accountants.js';
 
 export const app = {
   me: null, settings: null, crate_types: [], items: [], pending: 0,
@@ -39,6 +40,9 @@ const ROUTES = [
   [/^\/shipments\/(\d+)$/, sup.renderShipment],
   [/^\/settlements$/, sup.renderSettlements],
   [/^\/stock$/, sup.renderStock],
+  [/^\/accountants$/, acct.renderList, ['approve', 'reports', 'cash']],
+  [/^\/accountants\/([0-9a-f-]+)$/, acct.renderOne, ['approve', 'reports', 'cash']],
+  [/^\/shifts\/(\d+)$/, acct.renderShift],
   [/^\/settlements\/new$/, sup.renderSettlementNew, 'settlements'],
   [/^\/settlements\/(\d+)$/, sup.renderSettlement],
   [/^\/cash$/, cash.render, ['cash', 'reports', 'sales', 'collections', 'payouts']],
@@ -63,6 +67,7 @@ const NAV = [
   ['settlements', 'فواتير الموردين', 'scale'],
   { grp: 'الفلوس والإدارة' },
   ['cash', 'العهدة', 'wallet', ['cash', 'reports', 'sales', 'collections', 'payouts']],
+  ['accountants', 'المحاسبين', 'users', ['approve', 'reports', 'cash']],
   ['approvals', 'الموافقات', 'approve', 'approve'],
   ['reports', 'التقارير', 'chart', 'reports'],
   ['settings', 'الإعدادات', 'gear', ['settings', 'users', 'backup']],

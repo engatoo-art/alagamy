@@ -49,7 +49,7 @@ export const CASH_CAT = {
   sale: 'بيع نقدي', collection: 'تحصيل من زبون', funding: 'تمويل الدرج', other_in: 'وارد آخر',
   crate_refund: 'رد رهن صناديق', supplier_payment: 'صرف لمورد', transport: 'أجرة نقل', bill: 'فاتورة / مصروفات',
   salary: 'يوميات وأجور', withdrawal: 'سحب من الدرج', other_out: 'مصروف آخر', sale_void: 'إلغاء فاتورة', payment_void: 'إلغاء دفعة',
-  shift_short: 'عجز في العهدة', shift_over: 'زيادة في العهدة', sale_edit: 'تعديل فاتورة',
+  shift_short: 'عجز في العهدة', shift_over: 'زيادة في العهدة', sale_edit: 'تعديل فاتورة', supplier_advance: 'مقدم لعميل (عهدة)', advance_return: 'رجوع مقدم من عميل',
 };
 export const PERMS = [
   ['sales', 'البيع وعمل الفواتير'],

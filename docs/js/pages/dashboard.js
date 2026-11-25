@@ -32,6 +32,7 @@ export async function render({ app, el }) {
     ${app.can('collections') || app.can('reports') ? `<a href="#/debts" class="c-rose">${icon('ledger')}<b>الزمامات</b><span>المديونيات والتأخير</span></a>` : ''}
     ${app.can('collections') ? `<a href="#/crates" class="c-brown">${icon('crate')}<b>الصناديق</b><span>المرتجع والرهن</span></a>` : ''}
     <a href="#/cash" class="c-indigo">${icon('clock')}<b>العهدة</b><span>${cs.shift ? 'مع ' + esc(cs.shift.user_name) : 'مقفولة'}</span></a>
+    ${app.can('approve') ? `<a href="#/accountants" class="c-teal">${icon('users')}<b>المحاسبين</b><span>العهد والعجز والزيادة</span></a>` : ''}
     ${app.can('reports') ? `<a href="#/reports" class="c-cyan">${icon('chart')}<b>التقارير</b><span>يومي وشهري ومفصل</span></a>` : ''}
   </div>
 

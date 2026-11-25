@@ -3,7 +3,7 @@ import {
   esc, money, moneyT, qty, qtyT, n, round2, icon, ok, err, busy, modal, formData, tag, statusTag, date, dateT, todayISO,
   emptyState, debounce, confirmBox, promptBox, UNIT, STATUS,
 } from '../ui.js';
-import { settlementDoc } from '../print.js';
+import { settlementDoc, supplierStatementDoc } from '../print.js';
 import { doOrRequest } from '../requests.js';
 
 // ======================= الموردين =======================
@@ -69,17 +69,85 @@ export async function renderSupplier({ app, el, params }) {
     ${app.can('settlements') && s.open_shipments ? `<a class="btn" href="#/settlements/new?supplier=${id}">${icon('scale')} طلّع الفاتورة</a>` : ''}
     ${app.can('suppliers') ? `<button class="btn ghost" id="edit">${icon('edit')} تعديل</button>` : ''}
     <div class="sub"><span class="num">${esc(s.phone)}</span> — العمولة ${qtyT(s.commission_pct)}%${s.notes ? ' — ' + esc(s.notes) : ''}</div></div>
-  <div class="ledger-strip">
+  <div class="ledger-strip s5">
     <div><div class="k">نقلات لسه بتتباع</div><div class="v">${s.open_shipments}</div></div>
     <div><div class="k">فواتير مستنية موافقة</div><div class="v wait">${money(s.pending_amount)}</div></div>
     <div><div class="k">مستحق له (متوافق عليه)</div><div class="v neg">${money(s.due_amount)}</div></div>
     <div><div class="k">اتصرف له</div><div class="v pos">${money(s.paid_amount)}</div></div>
+    <div><div class="k">العهدة لدى العميل</div><div class="v wait">${money(s.advance_balance)}</div><div class="h">فلوس اتدفعتله مقدم</div></div>
   </div>
-  <div class="panel" style="margin-top:18px"><div class="ph"><h2>النقلات</h2></div>${shipmentsTable(ships)}</div>
+  <div class="panel" style="margin-top:18px" id="stmt"></div>
+  ${app.can('approve') ? '<div class="panel" id="advs"></div>' : ''}
+  <div class="panel"><div class="ph"><h2>النقلات</h2></div>${shipmentsTable(ships)}</div>
   <div class="panel"><div class="ph"><h2>فواتير الموردين</h2></div>${settlementsTable(setts)}</div>`;
   bindRows(app, el);
+  await statementPanel(app, el.querySelector('#stmt'), id);
+  if (app.can('approve')) await advancesPanel(app, el.querySelector('#advs'), id, () => app.go('#/suppliers/' + id + '?r=' + Date.now()));
   const e = el.querySelector('#edit');
   if (e) e.onclick = async () => { if (await supplierForm(app, s)) app.go('#/suppliers/' + id + '?r=' + Date.now()); };
+}
+
+// ---------- تجميع فواتير عميل من تاريخ لتاريخ ----------
+async function statementPanel(app, box, id) {
+  const y = todayISO().slice(0, 4);
+  box.innerHTML = `<div class="ph"><h2>تجميع الفواتير</h2>
+    <label class="f inl">من <input class="in" type="date" id="f" value="${y}-01-01"></label>
+    <label class="f inl">إلى <input class="in" type="date" id="t" value="${todayISO()}"></label>
+    <button class="btn sm" id="yr">من أول السنة</button><button class="btn sm" id="pr">${icon('print')} طباعة الكشف</button></div><div id="sb"></div>`;
+  let data = null;
+  const load = async () => {
+    data = await api.rpc('supplier_statement', { supplier_id: id, from: box.querySelector('#f').value, to: box.querySelector('#t').value });
+    const t = data.totals;
+    box.querySelector('#sb').innerHTML = `<div class="ledger-strip" style="margin:0 16px 14px">
+      <div><div class="k">عدد الفواتير</div><div class="v">${t.count}</div><div class="h">${qtyT(t.weight)} ك</div></div>
+      <div><div class="k">إجمالي البيع</div><div class="v">${money(t.gross)}</div></div>
+      <div><div class="k">عمولة / نولون / دخان</div><div class="v pos">${money(t.commission)}</div><div class="h">نولون ${moneyT(t.freight)} — دخان ${moneyT(t.smoke)}${n(t.other) ? ' — أخرى ' + moneyT(t.other) : ''}</div></div>
+      <div><div class="k">الصافي</div><div class="v neg">${money(t.net)}</div><div class="h">اتصرف ${moneyT(t.paid)}${n(t.advance) ? ' — من العهدة ' + moneyT(t.advance) : ''} — باقي ${moneyT(t.due)}</div></div>
+    </div>${data.invoices.length ? `<div class="tbl-wrap"><table class="t"><thead><tr><th>رقم</th><th>التاريخ</th><th class="n">الوزن</th><th class="n">البيع</th>
+      <th class="n">العمولة</th><th class="n">النولون</th><th class="n">الدخان</th><th class="n">الصافي</th><th class="n">من العهدة</th><th>الحالة</th></tr></thead>
+      <tbody>${data.invoices.map((x) => `<tr class="click" data-sett="${x.id}"><td class="num">${x.settle_no}</td><td>${date(x.date)}</td><td class="n">${qty(x.weight)}</td>
+        <td class="n">${money(x.gross)}</td><td class="n">${money(x.commission)}</td><td class="n">${money(x.freight)}</td><td class="n">${money(x.smoke)}</td>
+        <td class="n"><b>${money(x.net)}</b></td><td class="n">${n(x.advance) ? money(x.advance) : ''}</td><td>${statusTag(x.status)}</td></tr>`).join('')}</tbody></table></div>`
+      : emptyState('مفيش فواتير في الفترة دي', '')}`;
+    bindRows(app, box);
+  };
+  box.querySelector('#f').onchange = box.querySelector('#t').onchange = () => load().catch(err);
+  box.querySelector('#yr').onclick = () => { box.querySelector('#f').value = y + '-01-01'; box.querySelector('#t').value = todayISO(); load().catch(err); };
+  box.querySelector('#pr').onclick = () => data && supplierStatementDoc(data, app.settings);
+  await load();
+}
+
+// ---------- العهدة لدى العميل (مقدم) — للمدير بس ----------
+async function advancesPanel(app, box, id, reload) {
+  const d = await api.rpc('supplier_statement', { supplier_id: id, from: '2000-01-01' });
+  box.innerHTML = `<div class="ph"><h2>العهدة لدى العميل</h2><span class="tag pending">الرصيد ${moneyT(d.advance_balance)}</span>
+    <button class="btn primary sm" id="addAdv">${icon('plus')} فلوس مقدم للعميل</button></div>
+    <div class="pb muted small" style="padding-top:0">فلوس بتدفعها للعميل قبل ما البضاعة توصل. بتتخصم من العهدة (الدرج) وتقدر تخصمها بعدين من أي فاتورة من زرار "تعديل" في الفاتورة.</div>
+    ${d.advances.length ? `<div class="tbl-wrap"><table class="t"><thead><tr><th>التاريخ</th><th class="n">المبلغ</th><th>ملاحظات</th><th>بواسطة</th><th></th></tr></thead>
+    <tbody>${d.advances.map((a) => `<tr class="${a.voided ? 'void' : ''}"><td>${date(a.date)}</td><td class="n"><b>${money(a.amount)}</b></td><td>${esc(a.notes || '')}</td>
+      <td class="small muted">${esc(a.by || '')}</td><td>${a.voided ? tag('void', 'ملغي') : `<button class="btn ghost sm" data-ea="${a.id}">${icon('edit')} تعديل</button>
+      <button class="btn ghost sm danger" data-va="${a.id}">إلغاء</button>`}</td></tr>`).join('')}</tbody></table></div>` : ''}`;
+  const form = (a = {}) => {
+    const m = modal({
+      title: a.id ? 'تعديل المقدم' : 'فلوس مقدم للعميل',
+      body: `<form class="grid" id="af"><label class="f">المبلغ<input class="in" name="amount" type="number" step="0.01" min="0" value="${a.amount ?? ''}" required></label>
+        <label class="f">ملاحظات<input class="in" name="notes" value="${esc(a.notes || '')}" placeholder="مثلاً: مقدم نقلة البطاطس"></label>
+        <div class="alert info">${a.id ? 'الفرق بين المبلغ القديم والجديد هيتسجل في العهدة (الدرج).' : 'المبلغ هيتخصم من العهدة (الدرج) دلوقتي.'}</div></form>`,
+      actions: '<button class="btn primary" data-ok>حفظ</button><button class="btn" data-close>رجوع</button>',
+    });
+    m.$('[data-ok]').onclick = () => busy(m.$('[data-ok]'), async () => {
+      const v = formData(m.$('#af'));
+      if (!(n(v.amount) > 0)) throw new Error('اكتب المبلغ');
+      await api.rpc('save_advance', { ...v, id: a.id || null, supplier_id: id });
+      ok('اتسجل'); m.close(); reload();
+    });
+  };
+  box.querySelector('#addAdv').onclick = () => form();
+  box.querySelectorAll('[data-ea]').forEach((b) => b.onclick = () => form(d.advances.find((x) => x.id === +b.dataset.ea)));
+  box.querySelectorAll('[data-va]').forEach((b) => b.onclick = async () => {
+    if (!await confirmBox('إلغاء المقدم ده؟ المبلغ هيرجع للعهدة (الدرج).', { title: 'إلغاء', yes: 'إلغاء المقدم', danger: true })) return;
+    await busy(b, async () => { await api.rpc('void_advance', { id: +b.dataset.va }); ok('اتلغى'); reload(); });
+  });
 }
 
 function bindRows(app, el) {
@@ -339,14 +407,15 @@ const dateT2 = (d) => date(d);
 export async function renderSettlement({ app, el, params }) {
   const s = await api.rpc('get_settlement', { id: +params[0] });
   const lines = s.details?.lines || []; const items = s.details?.items || [];
+  const adv = n(s.advance_deducted), toPay = n(s.net_amount) - adv;
   el.innerHTML = `
   <div class="page-head" style="margin-bottom:12px"><a class="btn ghost sm" href="#/settlements">${icon('back')} فواتير الموردين</a></div>
   <div class="page-head"><h1>فاتورة رقم <span class="num">${s.settle_no}</span> — ${esc(s.supplier.name)}</h1>
     ${statusTag(s.status)}
     <button class="btn" id="print">${icon('print')} طباعة الفاتورة A4</button>
-    ${['pending', 'approved'].includes(s.status) && (app.can('settlements') || app.can('approve')) ? `<button class="btn" id="edit">${icon('edit')} تعديل العمولة والنولون والدخان</button>` : ''}
+    ${['pending', 'approved'].includes(s.status) && (app.can('settlements') || app.can('approve')) ? `<button class="btn" id="edit">${icon('edit')} تعديل العمولة والنولون والدخان${app.can('approve') ? ' والخصم من العهدة' : ''}</button>` : ''}
     ${s.status === 'pending' && app.can('approve') ? `<button class="btn primary" id="ok">${icon('check')} موافقة</button><button class="btn danger" id="no">رفض</button>` : ''}
-    ${s.status === 'approved' && app.can('payouts') ? `<button class="btn warn" id="pay">${icon('wallet')} صرف ${moneyT(s.net_amount)} من العهدة</button>` : ''}
+    ${s.status === 'approved' && app.can('payouts') ? `<button class="btn warn" id="pay">${icon('wallet')} صرف ${moneyT(toPay)} من العهدة</button>` : ''}
     <div class="sub">عملها ${esc(s.created_by_name || '')}${s.decided_by_name ? ' — ' + (s.status === 'rejected' ? 'رفضها ' : 'وافق عليها ') + esc(s.decided_by_name) : ''}${s.paid_by_name ? ' — صرفها ' + esc(s.paid_by_name) : ''}</div></div>
   ${s.status === 'rejected' ? `<div class="alert err" style="margin-bottom:14px">الفاتورة اترفضت${s.reject_reason ? ': ' + esc(s.reject_reason) : ''}. النقلات رجعت مفتوحة وتقدر تعمل فاتورة مورد جديدة.</div>` : ''}
   ${s.status === 'pending' && !app.can('approve') ? `<div class="alert warn" style="margin-bottom:14px">مستنية موافقة المدير قبل الصرف</div>` : ''}
@@ -355,7 +424,8 @@ export async function renderSettlement({ app, el, params }) {
     <div><div class="k">عمولتك (${qtyT(s.commission_pct)}%)</div><div class="v pos">${money(s.commission_amount)}</div></div>
     <div><div class="k">نولون ودخان ومصاريف</div><div class="v">${money(n(s.freight) + n(s.unloading) + n(s.other_expenses))}</div>
       <div class="h">نولون ${moneyT(s.freight)} — دخان ${moneyT(s.unloading)}${n(s.other_expenses) ? ' — ' + esc(s.other_label || 'أخرى') + ' ' + moneyT(s.other_expenses) : ''}</div></div>
-    <div><div class="k">الصافي للمورد</div><div class="v neg">${money(s.net_amount)}</div></div>
+    <div><div class="k">الصافي للمورد</div><div class="v neg">${money(s.net_amount)}</div>
+      ${adv ? `<div class="h">مخصوم من العهدة ${moneyT(adv)} — المطلوب صرفه <b>${moneyT(toPay)}</b></div>` : ''}</div>
   </div>
   <div class="panel" style="margin-top:18px"><div class="ph"><h2>المبيعات بأسعار البيع</h2></div><div class="tbl-wrap"><table class="t">
     <thead><tr><th>الصنف</th><th class="n">العدد</th><th class="n">الوزن</th><th class="n">السعر</th><th class="n">القيمة</th></tr></thead>
@@ -378,6 +448,8 @@ export async function renderSettlement({ app, el, params }) {
         <label class="f">الدخان<input class="in" name="unloading" type="number" step="0.01" value="${n(s.unloading)}"></label>
         <label class="f">مصاريف تانية<input class="in" name="other_expenses" type="number" step="0.01" value="${n(s.other_expenses)}"></label></div>
         <label class="f">بيان المصاريف التانية<input class="in" name="other_label" value="${esc(s.other_label || '')}"></label>
+        ${app.can('approve') ? `<label class="f">خصم من العهدة لدى العميل <span class="muted small">(المتاح: ${moneyT(n(s.advance_balance) + adv)})</span>
+          <input class="in" name="advance_deducted" type="number" step="0.01" min="0" value="${adv}"></label>` : ''}
         <div class="alert" id="net"></div>
         ${app.can('approve') ? '' : '<div class="alert warn">بعد التعديل الفاتورة هترجع تستنى موافقة المدير.</div>'}
       </form>`,
@@ -386,7 +458,8 @@ export async function renderSettlement({ app, el, params }) {
     const upd = () => {
       const v = formData(m.$('#ef'));
       const c = round2(n(s.gross_sales) * n(v.commission_pct) / 100);
-      m.$('#net').innerHTML = `العمولة ${moneyT(c)} — الصافي للمورد <b>${moneyT(n(s.gross_sales) - c - n(v.freight) - n(v.unloading) - n(v.other_expenses))}</b>`;
+      const net = n(s.gross_sales) - c - n(v.freight) - n(v.unloading) - n(v.other_expenses);
+      m.$('#net').innerHTML = `العمولة ${moneyT(c)} — الصافي للمورد <b>${moneyT(net)}</b>` + (n(v.advance_deducted) ? ` — بعد خصم العهدة يتصرف له <b>${moneyT(net - n(v.advance_deducted))}</b>` : '');
     };
     m.$('#ef').addEventListener('input', upd); upd();
     m.$('[data-ok]').onclick = () => busy(m.$('[data-ok]'), async () => {
@@ -404,8 +477,8 @@ export async function renderSettlement({ app, el, params }) {
   };
   if (payB) payB.onclick = async () => {
     let bal = '';
-    try { const cd = await api.rpc('cash_day', {}); bal = `<br>رصيد العهدة دلوقتي: <b>${moneyT(cd.closing)}</b>` + (n(cd.closing) < n(s.net_amount) ? ' <span class="t-out">(مش كفاية)</span>' : ''); } catch { /* مش عنده صلاحية يشوف العهدة */ }
-    if (!await confirmBox(`هيتصرف <b>${moneyT(s.net_amount)}</b> لـ ${esc(s.supplier.name)} من العهدة.${bal}`, { title: 'صرف الفاتورة', yes: 'صرف' })) return;
+    try { const cd = await api.rpc('cash_day', {}); bal = `<br>رصيد العهدة دلوقتي: <b>${moneyT(cd.closing)}</b>` + (n(cd.closing) < toPay ? ' <span class="t-out">(مش كفاية)</span>' : ''); } catch { /* مش عنده صلاحية يشوف العهدة */ }
+    if (!await confirmBox(`هيتصرف <b>${moneyT(toPay)}</b> لـ ${esc(s.supplier.name)} من العهدة.${bal}`, { title: 'صرف الفاتورة', yes: 'صرف' })) return;
     await busy(payB, async () => { await api.rpc('pay_settlement', { id: s.id }); ok('اتصرفت الفاتورة واتخصمت من العهدة'); reload(); });
   };
 }

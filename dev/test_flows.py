@@ -250,4 +250,36 @@ r = call(acc, "rate_customer", {"id": cust["id"], "rating_pay": 2, "rating_gener
 assert r["rating_pay"] == 2 and r["guarantor"] == "الحاج سيد"
 assert call(admin, "report_zimam", {"search": "سيد"})[0]["name"] == "محل الأمانة"
 ok(f"الزمامات: محل الأمانة متأخر {z10[0]['days_late']} يوم، الضامن والتقييم اتسجلوا، والبحث بالضامن شغال")
+# ===== العهدة لدى العميل + كشف العميل + المحاسبين =====
+expect_error(acc, "save_advance", {"supplier_id": sup["id"], "amount": 1000}, "صلاحية")
+adv = call(admin, "save_advance", {"supplier_id": sup["id"], "amount": 1000, "notes": "مقدم الموسم"})
+assert float(adv["balance"]) == 1000
+sh3 = call(acc, "save_shipment", {"supplier_id": sup["id"], "items": [{"item_name": "عنب", "qty": 10}]})
+si3 = sh3["items"][0]["id"]
+call(mate, "create_sale", {"customer_id": cash_c["id"], "payment_type": "cash", "lines": [{"shipment_item_id": si3, "unit": "kg", "qty": 10, "weight": 200, "price": 20}]})
+st3 = call(acc, "create_settlement", {"supplier_id": sup["id"], "shipment_ids": [sh3["id"]], "freight": 0, "unloading": 0})
+expect_error(acc, "edit_settlement", {"id": st3["id"], "advance_deducted": 300}, "للمدير")
+expect_error(admin, "edit_settlement", {"id": st3["id"], "advance_deducted": 5000}, "فيها")
+e3 = call(admin, "edit_settlement", {"id": st3["id"], "advance_deducted": 600})
+assert float(e3["advance_deducted"]) == 600 and float(e3["advance_balance"]) == 400
+call(admin, "decide_settlement", {"id": st3["id"], "approve": True})
+before = float(call(admin, "current_shift")["cash_balance"])
+call(mate, "pay_settlement", {"id": st3["id"]}) if False else call(admin, "pay_settlement", {"id": st3["id"]})
+after = float(call(admin, "current_shift")["cash_balance"])
+assert round(before - after, 2) == round(float(e3["net_amount"]) - 600, 2)
+expect_error(admin, "save_advance", {"id": adv["id"], "amount": 500}, "مينفعش")
+call(admin, "save_advance", {"id": adv["id"], "amount": 800})
+ss = call(acc, "supplier_statement", {"supplier_id": sup["id"], "from": "2000-01-01"})
+assert ss["totals"]["count"] >= 2 and float(ss["advance_balance"]) == 200
+ok(f"العهدة لدى العميل: مقدم 1000، خصم 600 من فاتورة، اتصرف الصافي ناقص المقدم، والرصيد {ss['advance_balance']}")
+accs = call(admin, "list_accountants")
+mona = [x for x in accs if x["username"] == "mona"][0]
+sid = [x for x in call(admin, "list_shifts", {"from": "2000-01-01"}) if x["user_name"] == "منى"][0]["id"]
+det = call(admin, "shift_detail", {"id": sid})
+assert det["sales_totals"]["count"] >= 1 and det["sales"][0]["lines"]
+expect_error(admin, "review_shift", {"id": sid}, "مقفولة")
+first_closed = [x for x in call(admin, "list_shifts", {"from": "2000-01-01"}) if x["status"] == "closed"][0]
+rv = call(admin, "review_shift", {"id": first_closed["id"], "note": "تمام"})
+assert rv["reviewed_by_name"] == "المدير"
+ok(f"المحاسبين: منى عملت {mona['sales_count']} فاتورة، وتفاصيل العهدة فيها البيع والأصناف، والمراجعة اتسجلت")
 print("\nكل الاختبارات نجحت ✔")
