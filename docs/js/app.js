@@ -54,6 +54,7 @@ const NAV = [
   ['sale', 'بيع جديد', 'cart', 'sales'],
   ['sales', 'فواتير البيع', 'receipt'],
   ['customers', 'الزباين والحسابات', 'users'],
+  ['debts', 'الزمامات', 'ledger', ['reports', 'collections', 'customers']],
   ['crates', 'الصناديق', 'crate'],
   { grp: 'الموردين' },
   ['shipments', 'النقلات الواردة', 'truck'],
@@ -70,7 +71,7 @@ const NAV = [
 const allowed = (perm) => !perm || (Array.isArray(perm) ? perm.some((p) => app.can(p)) : app.can(perm));
 
 function shell() {
-  const logo = 'img/logo.png';
+  const logo = 'img/logo-icon.png';
   document.body.innerHTML = `
   <div class="shell">
     <aside class="side" id="side">

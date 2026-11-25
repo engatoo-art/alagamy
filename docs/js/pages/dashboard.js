@@ -9,10 +9,11 @@ export async function render({ app, el }) {
   const needBackup = app.can('backup') && (!lastBackup || (Date.now() - Number(lastBackup)) > 7 * 864e5);
 
   el.innerHTML = `
-  <div class="page-head">
-    <h1>${new Date().getHours() < 12 ? 'صباح الخير' : 'مساء الخير'}، ${esc((app.me.full_name || app.me.username).split(' ')[0])}</h1>
-    ${app.can('sales') ? `<a class="btn primary lg" href="#/sale">${icon('plus')} بيع جديد</a>` : ''}
-    <div class="sub">${dateLong(d.today)}</div>
+  <div class="hero">
+    <img src="img/logo-icon.png" alt="">
+    <div class="grow"><h1>${new Date().getHours() < 12 ? 'صباح الخير' : 'مساء الخير'}، ${esc((app.me.full_name || app.me.username).split(' ')[0])}</h1>
+      <div class="d">${dateLong(d.today)} — ${esc(app.settings?.shop_name || '')}</div></div>
+    ${app.can('sales') ? `<a class="btn lg" href="#/sale">${icon('plus')} بيع جديد</a>` : ''}
   </div>
 
   ${cs.shift ? (cs.mine ? `<div class="alert info" style="margin-bottom:14px">عهدتك مفتوحة — المفروض في الدرج دلوقتي <b>${money(n(cs.shift.opening_amount) + n(cs.shift.live_in) - n(cs.shift.live_out))}</b>. <a href="#/cash">العهدة</a></div>`
@@ -23,14 +24,15 @@ export async function render({ app, el }) {
 
   <div class="tiles">
     ${app.can('sales') ? `<a href="#/sale" class="main">${icon('cart')}<b>بيع</b><span>فاتورة جديدة</span></a>` : ''}
-    ${app.can('collections') ? `<a href="#/customers">${icon('money')}<b>التحصيل</b><span>دفعة من زبون</span></a>` : ''}
-    ${app.can('cash') ? `<a href="#/cash?out=1">${icon('wallet')}<b>الخارج</b><span>مصروف من الدرج</span></a>` : ''}
-    <a href="#/suppliers">${icon('truck')}<b>الموردين</b><span>النقلات والعملاء</span></a>
-    <a href="#/stock">${icon('box')}<b>الأصناف</b><span>البضاعة الموجودة</span></a>
-    <a href="#/settlements">${icon('receipt')}<b>فواتير الموردين</b><span>العمولة والنولون والدخان</span></a>
-    ${app.can('collections') ? `<a href="#/crates">${icon('crate')}<b>الصناديق</b><span>المرتجع والرهن</span></a>` : ''}
-    <a href="#/cash">${icon('clock')}<b>العهدة</b><span>${cs.shift ? 'مع ' + esc(cs.shift.user_name) : 'مقفولة'}</span></a>
-    ${app.can('reports') ? `<a href="#/reports">${icon('chart')}<b>التقارير</b><span>يومي وشهري ومفصل</span></a>` : ''}
+    ${app.can('collections') ? `<a href="#/customers" class="c-teal">${icon('money')}<b>التحصيل</b><span>دفعة من زبون</span></a>` : ''}
+    ${app.can('cash') ? `<a href="#/cash?out=1" class="c-red">${icon('wallet')}<b>الخارج</b><span>مصروف من الدرج</span></a>` : ''}
+    <a href="#/suppliers" class="c-blue">${icon('truck')}<b>الموردين</b><span>النقلات والعملاء</span></a>
+    <a href="#/stock" class="c-amber">${icon('box')}<b>الأصناف</b><span>البضاعة الموجودة</span></a>
+    <a href="#/settlements" class="c-plum">${icon('receipt')}<b>فواتير الموردين</b><span>العمولة والنولون والدخان</span></a>
+    ${app.can('collections') || app.can('reports') ? `<a href="#/debts" class="c-rose">${icon('ledger')}<b>الزمامات</b><span>المديونيات والتأخير</span></a>` : ''}
+    ${app.can('collections') ? `<a href="#/crates" class="c-brown">${icon('crate')}<b>الصناديق</b><span>المرتجع والرهن</span></a>` : ''}
+    <a href="#/cash" class="c-indigo">${icon('clock')}<b>العهدة</b><span>${cs.shift ? 'مع ' + esc(cs.shift.user_name) : 'مقفولة'}</span></a>
+    ${app.can('reports') ? `<a href="#/reports" class="c-cyan">${icon('chart')}<b>التقارير</b><span>يومي وشهري ومفصل</span></a>` : ''}
   </div>
 
   <div class="ledger-strip" style="margin-top:18px">

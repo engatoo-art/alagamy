@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2f9460"/><stop offset=".5" stop-color="#1b6340"/><stop offset="1" stop-color="#0e3a25"/></linearGradient>
+    <radialGradient id="sun" cx=".38" cy=".35" r=".75"><stop offset="0" stop-color="#ffe0a0"/><stop offset=".55" stop-color="#f7a823"/><stop offset="1" stop-color="#e2790d"/></radialGradient>
+    <linearGradient id="ink" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#ffffff"/><stop offset="1" stop-color="#ffe6b3"/></linearGradient>
+    <radialGradient id="glow" cx=".5" cy=".55" r=".6"><stop offset="0" stop-color="#3fb57a" stop-opacity=".32"/><stop offset="1" stop-color="#3fb57a" stop-opacity="0"/></radialGradient>
+  </defs>
+  <clipPath id="clip"><rect width="512" height="512" rx="112"/></clipPath><g clip-path="url(#clip)"><rect width="512" height="512" fill="url(#bg)"/>
+  <circle cx="256" cy="300" r="260" fill="url(#glow)"/></g>
+  <g transform="translate(108 104)">
+    <circle r="62" fill="url(#sun)"/>
+    <path d="M6 -58 C 30 -100, 86 -104, 104 -80 C 82 -52, 34 -44, 6 -58 Z" fill="#8edba8"/>
+    <path d="M10 -60 C 40 -76, 70 -80, 96 -80" stroke="#2f9460" stroke-width="3" fill="none" stroke-linecap="round"/>
+  </g>
+  <text x="256" y="318" text-anchor="middle" font-family="FreeSerif" font-weight="700" font-size="172"
+        fill="none" stroke="#f7a823" stroke-opacity=".95" stroke-width="15" stroke-linejoin="round">العجمي</text>
+  <text x="256" y="318" text-anchor="middle" font-family="FreeSerif" font-weight="700" font-size="172"
+        fill="none" stroke="#ffffff" stroke-width="5" stroke-linejoin="round">العجمي</text>
+  
+</svg>

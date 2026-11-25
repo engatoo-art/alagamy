@@ -341,6 +341,18 @@ export function moneyDoc(r, s) {
     <div class="sign"><div>المحاسب</div><div>المدير</div><div></div></div></div>`, { size: 'A4', title: isIn ? 'الفلوس اللي دخلت' : 'الفلوس اللي خرجت' });
 }
 
+export function zimamDoc(list, f, s) {
+  const total = list.reduce((a, x) => a + n(x.balance), 0);
+  const st = (v) => '★'.repeat(v || 0) + '☆'.repeat(5 - (v || 0));
+  printDoc(`<div class="a4">${headA4(s, 'كشف الزمامات', null, dateLong(new Date().toISOString()) + (f.min_days ? ` — متأخر أكتر من ${f.min_days} يوم` : ''))}
+    <table class="d"><thead><tr><th>الزبون</th><th>الضامن</th><th>عليه</th><th>متأخر</th><th>أقدم فاتورة</th><th>آخر دفعة</th><th>مرات الشراء</th><th>السداد</th><th>عام</th></tr></thead>
+    <tbody>${list.map((x) => `<tr><td><b>${esc(x.name)}</b><br><span class="num" style="font-size:11px">${esc(x.phone || '')}</span></td><td>${esc(x.guarantor || '')}</td>
+      <td>${m(x.balance)}</td><td>${x.days_late || 0} يوم</td><td>${dateT(x.oldest_unpaid)}</td><td>${x.last_payment ? dateT(x.last_payment) : '—'}</td>
+      <td>${x.purchases}</td><td style="letter-spacing:-1px">${st(x.rating_pay)}</td><td style="letter-spacing:-1px">${st(x.rating_general)}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td colspan="2">${list.length} زبون</td><td>${m(total)}</td><td colspan="6"></td></tr></tfoot></table>
+    <div class="sign"><div>المحاسب</div><div>المدير</div><div></div></div></div>`, { size: 'A4', title: 'الزمامات' });
+}
+
 export function debtsDoc(list, s) {
   const total = list.reduce((a, x) => a + n(x.balance), 0);
   printDoc(`<div class="a4">${headA4(s, 'كشف المديونيات والصناديق', null, dateLong(new Date().toISOString()))}

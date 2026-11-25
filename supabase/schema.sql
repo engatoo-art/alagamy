@@ -75,6 +75,11 @@ create table if not exists public.customers (
   created_at timestamptz not null default now()
 );
 
+alter table public.customers add column if not exists guarantor text not null default '';
+alter table public.customers add column if not exists rating_pay int not null default 0 check (rating_pay between 0 and 5);
+alter table public.customers add column if not exists rating_general int not null default 0 check (rating_general between 0 and 5);
+alter table public.customers add column if not exists rating_note text not null default '';
+
 create sequence if not exists public.settlement_no_seq;
 create table if not exists public.settlements (
   id serial primary key,
@@ -507,8 +512,8 @@ begin
   perform _need_any(array['customers','sales']);
   if _t(p, 'name') = '' then raise exception 'اكتب اسم الزبون'; end if;
   if _i(p, 'id') is null then
-    insert into customers(name, phone, address, notes, credit_approved, credit_limit, credit_requested)
-    values (_t(p, 'name'), _t(p, 'phone'), _t(p, 'address'), _t(p, 'notes'),
+    insert into customers(name, phone, address, notes, guarantor, credit_approved, credit_limit, credit_requested)
+    values (_t(p, 'name'), _t(p, 'phone'), _t(p, 'address'), _t(p, 'notes'), _t(p, 'guarantor'),
             case when can_approve then coalesce((p->>'credit_approved')::boolean, false) else false end,
             case when can_approve then _n(p, 'credit_limit') else 0 end,
             case when can_approve then false else coalesce((p->>'credit_requested')::boolean, false) end)
@@ -516,6 +521,7 @@ begin
   else
     update customers set
       name = _t(p, 'name'), phone = _t(p, 'phone'), address = _t(p, 'address'), notes = _t(p, 'notes'),
+      guarantor = coalesce(p->>'guarantor', guarantor),
       active = coalesce((p->>'active')::boolean, active),
       credit_approved = case when can_approve then coalesce((p->>'credit_approved')::boolean, credit_approved) else credit_approved end,
       credit_limit = case when can_approve then _n(p, 'credit_limit', credit_limit) else credit_limit end,
@@ -1496,6 +1502,64 @@ begin
   return get_settlement(jsonb_build_object('id', s.id));
 end $$;
 
+-- ============================ الزمامات ================================
+
+-- تاريخ أقدم فاتورة آجل لسه ما اتسددتش (الدفعات بتتخصم من الأقدم للأحدث)
+create or replace function public._oldest_unpaid(cid int) returns date
+language sql stable security definer set search_path = public as $$
+  with paid as (
+    select coalesce((select sum(amount) from customer_payments where customer_id = cid and not voided), 0)
+         + coalesce((select sum(amount) from crate_returns where customer_id = cid and method = 'account'), 0) as total
+  ), debts as (
+    select sale_date, sum(grand_total - paid_amount) over (order by sale_date, id) as cum
+    from sales where customer_id = cid and not voided and grand_total - paid_amount > 0
+  )
+  select min(sale_date) from debts, paid where cum > paid.total
+$$;
+
+create or replace function public.report_zimam(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare q text := '%' || _t(p, 'search') || '%'; mind int := coalesce(_i(p, 'min_days'), 0); today date := cairo_today();
+begin
+  perform _need_any(array['reports','collections','customers']);
+  return (select coalesce(jsonb_agg(x order by
+            case when _t(p, 'sort') = 'balance' then -(x->>'balance')::numeric else -(x->>'days_late')::numeric end), '[]')
+    from (
+      select jsonb_build_object(
+        'id', c.id, 'name', c.name, 'phone', c.phone, 'guarantor', c.guarantor,
+        'rating_pay', c.rating_pay, 'rating_general', c.rating_general, 'rating_note', c.rating_note,
+        'credit_limit', c.credit_limit, 'balance', b.bal, 'oldest_unpaid', b.oldest,
+        'days_late', coalesce(today - b.oldest, 0),
+        'last_payment', (select max(pay_date) from customer_payments where customer_id = c.id and not voided),
+        'days_since_payment', today - (select max(pay_date) from customer_payments where customer_id = c.id and not voided),
+        'purchases', (select count(*) from sales where customer_id = c.id and not voided),
+        'credit_purchases', (select count(*) from sales where customer_id = c.id and not voided and payment_type = 'credit'),
+        'total_purchases', (select coalesce(sum(grand_total), 0) from sales where customer_id = c.id and not voided),
+        'last_sale', (select max(sale_date) from sales where customer_id = c.id and not voided),
+        'payments_count', (select count(*) from customer_payments where customer_id = c.id and not voided),
+        'crates', _customer_crates(c.id)) as x
+      from customers c
+      cross join lateral (select _customer_balance(c.id) as bal, _oldest_unpaid(c.id) as oldest) b
+      where b.bal > 0 and (c.name ilike q or c.phone ilike q or c.guarantor ilike q)
+        and coalesce(today - b.oldest, 0) >= mind
+    ) t);
+end $$;
+
+create or replace function public.rate_customer(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r customers;
+begin
+  perform _need_any(array['customers','collections','approve']);
+  update customers set
+    rating_pay = least(greatest(coalesce(_i(p, 'rating_pay'), rating_pay), 0), 5),
+    rating_general = least(greatest(coalesce(_i(p, 'rating_general'), rating_general), 0), 5),
+    rating_note = coalesce(p->>'rating_note', rating_note),
+    guarantor = coalesce(p->>'guarantor', guarantor)
+  where id = _i(p, 'id') returning * into r;
+  if not found then raise exception 'الزبون غير موجود'; end if;
+  return to_jsonb(r);
+end $$;
+
 -- ============================ التقارير ================================
 
 create or replace function public.report_sales_detail(p jsonb default '{}'::jsonb) returns jsonb
@@ -1711,7 +1775,7 @@ grant execute on function
   public.current_shift(jsonb), public.open_shift(jsonb), public.close_shift(jsonb), public.shift_report(jsonb),
   public.list_shifts(jsonb), public.edit_sale(jsonb), public.list_stock(jsonb), public.stock_adjust(jsonb),
   public.request_change(jsonb), public.decide_change(jsonb), public.list_requests(jsonb), public.edit_settlement(jsonb),
-  public.report_sales_detail(jsonb), public.report_money(jsonb)
+  public.report_sales_detail(jsonb), public.report_money(jsonb), public.report_zimam(jsonb), public.rate_customer(jsonb)
 to authenticated;
 
 -- تم ✔

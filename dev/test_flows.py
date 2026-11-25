@@ -238,4 +238,16 @@ assert rd["by_item"] and rd["lines"] and float(rd["totals"]["amount"]) > 0
 ro = call(acc, "report_money", {"direction": "out", "from": "2000-01-01"})
 assert ro["by_party"] and float(ro["total"]) > 0
 ok(f"التقارير المفصلة: {len(rd['lines'])} سطر بيع، {ro['count']} حركة خارجة")
+# ===== الزمامات =====
+z = call(admin, "report_zimam", {})
+amana = [x for x in z if x["name"] == "محل الأمانة"][0]
+assert float(amana["balance"]) > 0 and amana["purchases"] >= 1 and amana["oldest_unpaid"]
+sql("update sales set sale_date = sale_date - 10 where customer_id = %d" % cust["id"])
+z10 = call(admin, "report_zimam", {"min_days": 7})
+assert any(x["name"] == "محل الأمانة" and x["days_late"] >= 10 for x in z10)
+assert call(admin, "report_zimam", {"min_days": 30}) == [] or all(x["days_late"] >= 30 for x in call(admin, "report_zimam", {"min_days": 30}))
+r = call(acc, "rate_customer", {"id": cust["id"], "rating_pay": 2, "rating_general": 4, "guarantor": "الحاج سيد", "rating_note": "بيتأخر"})
+assert r["rating_pay"] == 2 and r["guarantor"] == "الحاج سيد"
+assert call(admin, "report_zimam", {"search": "سيد"})[0]["name"] == "محل الأمانة"
+ok(f"الزمامات: محل الأمانة متأخر {z10[0]['days_late']} يوم، الضامن والتقييم اتسجلوا، والبحث بالضامن شغال")
 print("\nكل الاختبارات نجحت ✔")

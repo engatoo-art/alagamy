@@ -21,6 +21,7 @@ export function customerForm(app, c = {}) {
             <label class="f">حد الآجل (0 = من غير حد)<input class="in" name="credit_limit" type="number" min="0" value="${n(c.credit_limit) || ''}"></label></div>`
           : (c.credit_approved ? '<div class="alert info">الزبون ده مسموح له بالآجل</div>'
             : `<label class="check"><input type="checkbox" name="credit_requested" ${c.credit_requested ? 'checked' : ''}> اطلب من المدير يسمح له بالآجل</label>`)}
+        <label class="f">الضامن (تبع مين)<input class="in" name="guarantor" value="${esc(c.guarantor || '')}" placeholder="مثلاً: الحاج سيد"></label>
         <label class="f">ملاحظات<input class="in" name="notes" value="${esc(c.notes || '')}"></label>
         ${c.id ? `<label class="check"><input type="checkbox" name="active" ${c.active !== false ? 'checked' : ''}> الحساب شغال</label>` : ''}
       </form>`,
@@ -143,7 +144,7 @@ export async function renderView({ app, el, params, query }) {
     <div class="account ${owes ? 'owes' : ''}">
       <div class="stamp"><div>حساب<b class="num">${c.id}</b></div></div>
       <div><h1>${esc(c.name)}</h1>
-        <div class="meta">${c.phone ? `<span class="num">${esc(c.phone)}</span> — ` : ''}${c.credit_approved ? 'مسموح له بالآجل' + (n(c.credit_limit) ? ' لحد ' + moneyT(c.credit_limit) : '') : c.credit_requested ? 'طلب الآجل مستني موافقة المدير' : 'نقدي بس'}</div>
+        <div class="meta">${c.guarantor ? `الضامن: <b>${esc(c.guarantor)}</b> — ` : ''}${c.phone ? `<span class="num">${esc(c.phone)}</span> — ` : ''}${c.credit_approved ? 'مسموح له بالآجل' + (n(c.credit_limit) ? ' لحد ' + moneyT(c.credit_limit) : '') : c.credit_requested ? 'طلب الآجل مستني موافقة المدير' : 'نقدي بس'}</div>
         <div class="crates-row">${st.crates.map((x) => tag('crate', `${x.count} ${x.name}`)).join('') || '<span class="muted small">مش عليه صناديق</span>'}</div>
       </div>
       <div class="bal"><div class="k">${owes ? 'عليه' : n(st.balance) < 0 ? 'ليه عندنا' : 'الحساب'}</div>

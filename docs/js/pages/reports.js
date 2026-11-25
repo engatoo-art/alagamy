@@ -1,6 +1,7 @@
 import { api } from '../api.js';
-import { esc, money, moneyT, qty, qtyT, n, icon, err, tag, date, todayISO, addDays, monthRange, emptyState, CASH_CAT, dateT, dateLong, debounce, PAY } from '../ui.js';
-import { reportDoc, debtsDoc, salesDetailDoc, moneyDoc } from '../print.js';
+import { esc, money, moneyT, qty, qtyT, n, icon, err, tag, date, todayISO, addDays, monthRange, emptyState, CASH_CAT, dateT, dateLong, debounce, PAY, stars, modal, busy, ok } from '../ui.js';
+import { reportDoc, zimamDoc, salesDetailDoc, moneyDoc } from '../print.js';
+import { paymentModal } from './customers.js';
 
 export async function render({ app, el, query }) {
   const t = todayISO();
@@ -157,23 +158,88 @@ export async function render({ app, el, query }) {
   await load();
 }
 
-export async function renderDebts({ app, el }) {
-  const rows = await api.rpc('report_debts');
-  const debt = rows.filter((r) => n(r.balance) > 0);
-  const total = debt.reduce((a, r) => a + n(r.balance), 0);
+// ======================= الزمامات =======================
+function lateTag(d) {
+  if (!d) return '<span class="muted">—</span>';
+  const cls = d >= 30 ? 'rejected' : d >= 7 ? 'pending' : 'ok';
+  return `<span class="tag ${cls}">${d} يوم</span>`;
+}
+
+function rateModal(c, after) {
+  const st = { pay: c.rating_pay || 0, gen: c.rating_general || 0 };
+  const picker = (k) => `<div class="star-pick" data-k="${k}">${[1, 2, 3, 4, 5].map((i) => `<button type="button" data-v="${i}" aria-label="${i}">${icon('star')}</button>`).join('')}</div>`;
+  const m = modal({
+    title: 'تقييم ' + c.name,
+    body: `<div class="grid">
+      <div><div class="small muted" style="margin-bottom:4px">سرعة السداد</div>${picker('pay')}</div>
+      <div><div class="small muted" style="margin-bottom:4px">التقييم العام</div>${picker('gen')}</div>
+      <label class="f">الضامن (تبع مين)<input class="in" id="gu" value="${esc(c.guarantor || '')}"></label>
+      <label class="f">ملاحظة<input class="in" id="no" value="${esc(c.rating_note || '')}" placeholder="مثلاً: بيدفع آخر كل أسبوع"></label></div>`,
+    actions: '<button class="btn primary" data-ok>حفظ</button><button class="btn" data-close>رجوع</button>',
+  });
+  const paint = () => m.$$('.star-pick').forEach((p) => p.querySelectorAll('button').forEach((b) =>
+    b.classList.toggle('on', +b.dataset.v <= st[p.dataset.k])));
+  m.$$('.star-pick').forEach((p) => p.onclick = (e) => { const b = e.target.closest('button'); if (b) { st[p.dataset.k] = +b.dataset.v; paint(); } });
+  paint();
+  m.$('[data-ok]').onclick = () => busy(m.$('[data-ok]'), async () => {
+    await api.rpc('rate_customer', { id: c.id, rating_pay: st.pay, rating_general: st.gen, guarantor: m.$('#gu').value.trim(), rating_note: m.$('#no').value.trim() });
+    ok('اتحفظ التقييم'); m.close(); after();
+  });
+}
+
+export async function renderDebts({ app, el, query }) {
+  const F = { search: '', min_days: +(query.days || 0), sort: 'late' };
   el.innerHTML = `
-  <div class="page-head"><h1>المديونيات والصناديق</h1><button class="btn" id="print">${icon('print')} طباعة</button>
-    <div class="sub">كل زبون عليه فلوس أو صناديق</div></div>
-  <div class="ledger-strip" style="grid-template-columns:repeat(2,1fr)">
-    <div><div class="k">إجمالي الفلوس اللي برة</div><div class="v neg">${money(total)}</div><div class="h">${debt.length} زبون</div></div>
-    <div><div class="k">زباين ليهم فلوس عندنا</div><div class="v pos">${money(rows.filter((r) => n(r.balance) < 0).reduce((a, r) => a - n(r.balance), 0))}</div></div>
-  </div>
-  <div class="panel" style="margin-top:18px">${rows.length ? `<div class="tbl-wrap"><table class="t">
-    <thead><tr><th>الزبون</th><th>التليفون</th><th class="n">الرصيد</th><th>الصناديق</th><th>آخر دفعة</th><th>آخر شراء</th></tr></thead>
-    <tbody>${rows.map((r) => `<tr class="click" data-id="${r.id}"><td><b>${esc(r.name)}</b></td><td class="num muted">${esc(r.phone)}</td>
-      <td class="n ${n(r.balance) > 0 ? 't-out' : 't-in'}"><b>${money(r.balance)}</b></td>
-      <td>${r.crates.map((c) => tag('crate', c.count + ' ' + c.name)).join(' ')}</td><td>${r.last_payment ? date(r.last_payment) : '<span class="muted">—</span>'}</td><td>${date(r.last_sale)}</td></tr>`).join('')}</tbody></table></div>`
-    : emptyState('مفيش مديونيات', 'كل الحسابات خالصة')}</div>`;
-  el.querySelectorAll('[data-id]').forEach((r) => r.onclick = () => app.go('#/customers/' + r.dataset.id));
-  el.querySelector('#print').onclick = () => debtsDoc(rows, app.settings);
+  <div class="page-head"><h1>الزمامات</h1><button class="btn" id="print">${icon('print')} طباعة A4</button>
+    <div class="sub">كل زبون عليه فلوس من الشراء الآجل، ومتأخر بقاله كام يوم من أقدم فاتورة لسه ما اتسددتش.</div></div>
+  <div class="panel"><div class="pb row" style="align-items:flex-end">
+    <label class="f" style="flex:1;min-width:200px">بحث<input class="in" id="q" placeholder="اسم الزبون أو التليفون أو الضامن"></label>
+    <div><div class="small muted" style="margin-bottom:5px">متأخر أكتر من</div>
+      <div class="row" style="gap:6px"><div class="seg" id="days">${[[0, 'الكل'], [7, '7 أيام'], [15, '15 يوم'], [30, 'شهر'], [60, 'شهرين']].map(([v, l]) =>
+        `<button data-v="${v}">${l}</button>`).join('')}</div>
+      <input class="in" id="dn" type="number" min="0" placeholder="يوم" style="width:80px"></div></div>
+    <div><div class="small muted" style="margin-bottom:5px">الترتيب</div><div class="seg" id="sort"><button data-v="late">الأكتر تأخير</button><button data-v="balance">الأكبر مبلغ</button></div></div>
+  </div></div>
+  <div id="res"></div>`;
+  const res = el.querySelector('#res');
+  let rows = [];
+  const load = async () => {
+    el.querySelectorAll('#days button').forEach((b) => b.classList.toggle('on', +b.dataset.v === F.min_days));
+    el.querySelectorAll('#sort button').forEach((b) => b.classList.toggle('on', b.dataset.v === F.sort));
+    rows = await api.rpc('report_zimam', F);
+    const total = rows.reduce((a, r) => a + n(r.balance), 0);
+    const late30 = rows.filter((r) => r.days_late >= 30).reduce((a, r) => a + n(r.balance), 0);
+    const avg = rows.length ? Math.round(rows.reduce((a, r) => a + r.days_late, 0) / rows.length) : 0;
+    res.innerHTML = `
+    <div class="ledger-strip" style="margin-top:4px">
+      <div><div class="k">إجمالي الزمامات</div><div class="v neg">${money(total)}</div><div class="h">${rows.length} زبون</div></div>
+      <div><div class="k">متأخر أكتر من شهر</div><div class="v neg">${money(late30)}</div></div>
+      <div><div class="k">متوسط التأخير</div><div class="v">${avg} <small>يوم</small></div></div>
+      <div><div class="k">أكبر زمام</div><div class="v">${money(Math.max(0, ...rows.map((r) => n(r.balance))))}</div></div>
+    </div>
+    <div class="panel" style="margin-top:18px">${rows.length ? `<div class="tbl-wrap"><table class="t">
+      <thead><tr><th>الزبون</th><th>الضامن</th><th class="n">عليه</th><th>متأخر</th><th>أقدم فاتورة</th><th>آخر دفعة</th>
+        <th class="n">مرات الشراء</th><th>سرعة السداد</th><th>تقييم عام</th><th></th></tr></thead>
+      <tbody>${rows.map((r) => `<tr><td><a href="#/customers/${r.id}"><b>${esc(r.name)}</b></a><div class="small muted"><span class="num">${esc(r.phone)}</span></div></td>
+        <td>${esc(r.guarantor) || '<span class="muted">—</span>'}</td>
+        <td class="n t-out"><b>${money(r.balance)}</b></td><td>${lateTag(r.days_late)}</td>
+        <td>${r.oldest_unpaid ? date(r.oldest_unpaid) : ''}</td>
+        <td>${r.last_payment ? date(r.last_payment) + `<div class="small muted">من ${r.days_since_payment} يوم</div>` : '<span class="muted">مدفعش خالص</span>'}</td>
+        <td class="n">${r.purchases}<div class="small muted">آجل ${r.credit_purchases}</div></td>
+        <td>${stars(r.rating_pay)}</td><td>${stars(r.rating_general)}${r.rating_note ? `<div class="small muted">${esc(r.rating_note)}</div>` : ''}</td>
+        <td class="row" style="flex-wrap:nowrap;justify-content:flex-end">
+          ${app.can('collections') ? `<button class="btn sm primary" data-pay="${r.id}">${icon('money')} تحصيل</button>` : ''}
+          ${app.can('customers') || app.can('collections') || app.can('approve') ? `<button class="btn sm" data-rate="${r.id}">${icon('star')} تقييم</button>` : ''}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="2">${rows.length} زبون</td><td class="n">${money(total)}</td><td colspan="7"></td></tr></tfoot></table></div>`
+      : emptyState(F.min_days ? `مفيش حد متأخر أكتر من ${F.min_days} يوم` : 'مفيش زمامات', 'كل الحسابات خالصة')}</div>`;
+    const find = (id) => rows.find((r) => r.id === +id);
+    res.querySelectorAll('[data-pay]').forEach((b) => b.onclick = () => paymentModal(app, find(b.dataset.pay), () => load().catch(err)));
+    res.querySelectorAll('[data-rate]').forEach((b) => b.onclick = () => rateModal(find(b.dataset.rate), () => load().catch(err)));
+  };
+  el.querySelector('#q').addEventListener('input', debounce(() => { F.search = el.querySelector('#q').value.trim(); load().catch(err); }));
+  el.querySelector('#days').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; F.min_days = +b.dataset.v; el.querySelector('#dn').value = ''; load().catch(err); };
+  el.querySelector('#dn').addEventListener('input', debounce(() => { F.min_days = n(el.querySelector('#dn').value); load().catch(err); }, 400));
+  el.querySelector('#sort').onclick = (e) => { const b = e.target.closest('button'); if (!b) return; F.sort = b.dataset.v; load().catch(err); };
+  el.querySelector('#print').onclick = () => zimamDoc(rows, F, app.settings);
+  await load();
 }

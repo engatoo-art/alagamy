@@ -355,3 +355,83 @@ table.t tr.void td { color: var(--ink-3); text-decoration: line-through; }
   h1 { font-size: 20px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+
+/* النجوم */
+.stars { display: inline-flex; gap: 1px; vertical-align: middle; }
+.stars svg { width: 15px; height: 15px; fill: none; stroke: #c9cfc5; stroke-width: 1.6; }
+.stars svg.on { fill: var(--citrus); stroke: var(--citrus); }
+.star-pick { display: flex; gap: 4px; }
+.star-pick button { background: none; border: 0; padding: 2px; cursor: pointer; }
+.star-pick svg { width: 30px; height: 30px; fill: none; stroke: #c9cfc5; stroke-width: 1.5; }
+.star-pick button.on svg { fill: var(--citrus); stroke: var(--citrus); }
+
+
+/* ================= تحديث الألوان ================= */
+body {
+  background:
+    radial-gradient(1100px 420px at 100% -8%, rgba(47, 148, 96, .12), transparent 62%),
+    radial-gradient(800px 320px at -5% 0%, rgba(247, 168, 35, .10), transparent 60%),
+    var(--paper);
+  background-attachment: fixed;
+}
+.side {
+  background:
+    radial-gradient(420px 260px at 100% 0%, rgba(247, 168, 35, .16), transparent 70%),
+    linear-gradient(180deg, #1d6a44 0%, #134d31 45%, #0d3722 100%);
+}
+.brand img { width: 48px; height: 48px; border-radius: 12px; box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.nav a.on { background: linear-gradient(90deg, #fff 0%, #f1f8f3 100%); }
+.topbar { background: linear-gradient(90deg, #0f3d27, #1d6a44); }
+.btn.primary { background: linear-gradient(135deg, #2a8a57 0%, #1f6b45 55%, #185a39 100%); border-color: #1f6b45; }
+.btn.primary:hover { background: linear-gradient(135deg, #22784b, #154d31); }
+.btn.warn { background: linear-gradient(135deg, #f7b84a, #e89a0c); }
+.panel { box-shadow: 0 1px 2px rgba(29, 42, 36, .04), 0 6px 20px rgba(29, 42, 36, .04); }
+.ledger-strip { position: relative; box-shadow: 0 1px 2px rgba(29, 42, 36, .04), 0 6px 20px rgba(29, 42, 36, .05); }
+.ledger-strip::before { content: ""; position: absolute; inset-inline: 0; top: 0; height: 3px;
+  background: linear-gradient(90deg, #2f9460, #7fc99b 40%, #f7a823 75%, #e2790d); }
+.account { box-shadow: 0 6px 20px rgba(29, 42, 36, .06);
+  background: linear-gradient(100deg, #fff 55%, #f2f8f4 100%); }
+.account.owes { background: linear-gradient(100deg, #fff 55%, #fdf1ee 100%); }
+
+/* بانر الترحيب في الرئيسية */
+.hero {
+  position: relative; overflow: hidden; border-radius: 18px; padding: 22px 26px; margin-bottom: 18px; color: #fff;
+  display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  background:
+    radial-gradient(360px 200px at 12% 120%, rgba(247, 168, 35, .55), transparent 70%),
+    radial-gradient(500px 260px at 95% -30%, rgba(127, 201, 155, .45), transparent 70%),
+    linear-gradient(120deg, #0f3d27 0%, #1b6340 50%, #2a8a57 100%);
+  box-shadow: 0 10px 30px rgba(15, 61, 39, .25);
+}
+.hero img { width: 74px; height: 74px; border-radius: 18px; box-shadow: 0 6px 18px rgba(0,0,0,.3); }
+.hero h1 { color: #fff; font-size: 26px; }
+.hero .d { color: #cfe9d9; font-size: 14px; margin-top: 2px; }
+.hero .grow { flex: 1; min-width: 200px; }
+.hero .btn.lg { background: linear-gradient(135deg, #ffcf70, #f7a823); color: #3b2800; border: 0; box-shadow: 0 6px 16px rgba(0,0,0,.2); }
+
+/* ألوان المربعات */
+.tiles a { --c1: #2f9460; --c2: #1f6b45; --cs: #e4f0e8; position: relative; overflow: hidden; }
+.tiles a::after { content: ""; position: absolute; inset-inline: 18% ; bottom: 0; height: 3px; border-radius: 3px 3px 0 0; background: linear-gradient(90deg, var(--c1), var(--c2)); opacity: .0; transition: opacity .15s; }
+.tiles a:hover::after { opacity: 1; }
+.tiles a svg { background: linear-gradient(140deg, var(--cs), #fff); color: var(--c2); box-shadow: inset 0 0 0 1px rgba(0,0,0,.03); }
+.tiles a:hover { border-color: var(--c1); box-shadow: 0 10px 24px rgba(29, 42, 36, .08); }
+.tiles a.main { background: linear-gradient(140deg, #2f9460, #1b6340 60%, #0f3d27); border: 0; box-shadow: 0 10px 26px rgba(15, 61, 39, .28); }
+.tiles a.main svg { background: rgba(255,255,255,.16); color: #fff; box-shadow: none; }
+.tiles a.c-teal { --c1: #1aa39a; --c2: #0f7f78; --cs: #dcf3f1; }
+.tiles a.c-red { --c1: #e5604f; --c2: #c23a28; --cs: #fde7e3; }
+.tiles a.c-blue { --c1: #3a8fd0; --c2: #22679e; --cs: #e1eef9; }
+.tiles a.c-amber { --c1: #f2a72a; --c2: #c97c00; --cs: #fdf0d8; }
+.tiles a.c-plum { --c1: #9a5bc9; --c2: #713e9a; --cs: #f1e7f8; }
+.tiles a.c-rose { --c1: #e0507a; --c2: #b52f57; --cs: #fce4ec; }
+.tiles a.c-brown { --c1: #b07a4a; --c2: #85562d; --cs: #f5ebe1; }
+.tiles a.c-indigo { --c1: #5b6fd6; --c2: #3c4fae; --cs: #e6e9fa; }
+.tiles a.c-cyan { --c1: #2aa0c9; --c2: #157da1; --cs: #dff2f9; }
+
+.login .art {
+  background:
+    radial-gradient(500px 300px at 10% 110%, rgba(247, 168, 35, .45), transparent 70%),
+    radial-gradient(500px 300px at 100% -10%, rgba(127, 201, 155, .35), transparent 70%),
+    linear-gradient(140deg, #0f3d27, #1b6340 55%, #2a8a57);
+}
+.login .art img { width: 140px; height: 140px; border-radius: 30px; box-shadow: 0 14px 40px rgba(0,0,0,.35); }
+@media (max-width: 980px) { .hero { padding: 16px; } .hero img { width: 54px; height: 54px; } .hero h1 { font-size: 20px; } }
