@@ -27,6 +27,20 @@ jobs:
           curl -fsSL https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js -o xlsx.full.min.js
           mkdir -p $GITHUB_WORKSPACE/docs/js/vendor
           cp supabase.js xlsx.full.min.js $GITHUB_WORKSPACE/docs/js/vendor/
+      - name: Bundle fonts (علشان البرنامج يشتغل من غير نت)
+        run: |
+          cd $GITHUB_WORKSPACE/docs && mkdir -p fonts
+          curl -fsSL -A "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/124 Safari/537.36" \
+            "https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap" -o /tmp/g.css
+          python3 - <<'PY'
+          import re, urllib.request, os
+          css = open('/tmp/g.css').read()
+          for i, url in enumerate(sorted(set(re.findall(r'url\((https://[^)]+)\)', css)))):
+              name = f'plex-{i}.woff2'
+              urllib.request.urlretrieve(url, os.path.join('fonts', name))
+              css = css.replace(url, '../fonts/' + name)
+          open('css/fonts.css', 'w').write(css)
+          PY
       - uses: actions/upload-artifact@v4
         with: { name: site, path: docs }
 
@@ -88,13 +102,22 @@ jobs:
     needs: [windows, android]
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+        with: { path: src }
       - uses: actions/download-artifact@v4
         with: { path: dl }
+      - name: Full package (كل ملفات البرنامج في ملف واحد)
+        run: |
+          mkdir -p pkg/Alagamy && cd pkg/Alagamy
+          cp -r ../../src/supabase ../../src/apps ../../src/dev ../../src/README.md ../../src/README-AR.md .
+          cp -r ../../dl/site site
+          mkdir -p programs && cp ../../dl/windows/*.exe ../../dl/android/*.apk programs/
+          cd .. && zip -qr ../Alagamy-full.zip Alagamy && cd .. && ls -la Alagamy-full.zip
       - name: Publish download links
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag -R ${{ github.repository }} || true
-          gh release create latest dl/windows/AlagamySetup.exe dl/windows/Alagamy.exe dl/android/Alagamy.apk -R ${{ github.repository }} \
+          gh release create latest dl/windows/AlagamySetup.exe dl/windows/Alagamy.exe dl/android/Alagamy.apk Alagamy-full.zip -R ${{ github.repository }} \
             --title "العجمي — آخر نسخة" \
-            --notes "برنامج التسطيب للويندوز (AlagamySetup.exe)، ونسخة بتشتغل من غير تسطيب (Alagamy.exe)، وتطبيق الأندرويد (Alagamy.apk)."
+            --notes "برنامج التسطيب للويندوز (AlagamySetup.exe)، ونسخة بتشتغل من غير تسطيب (Alagamy.exe)، وتطبيق الأندرويد (Alagamy.apk)، وكل ملفات البرنامج في ملف واحد (Alagamy-full.zip)."

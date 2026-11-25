@@ -166,7 +166,18 @@ async function backup(app, body) {
     : `<div class="row"><button class="btn primary lg" data-k="">${icon('download')} نزّل الـ 3 ملفات</button>
         <button class="btn lg" data-k="all">كل البيانات بس</button><button class="btn lg" data-k="zimam">الزمامات بس</button><button class="btn lg" data-k="suppliers">العملاء بس</button></div>
       <p class="muted small" style="margin:0">في برنامج الويندوز الملفات بتتحفظ لوحدها كل 24 ساعة في الفولدر اللي تختاره.</p>`}
+    <hr style="border:0;border-top:1px solid var(--line-2);margin:4px 0">
+    <div><b>نسخة كاملة (JSON)</b><p class="muted small" style="margin:4px 0 8px">ملف واحد فيه كل البيانات بالظبط زي ما هي في قاعدة البيانات. ده اللي هيتنقل بيه البرنامج لسيرفر محلي على الكمبيوتر بعدين — احتفظ بيه.</p>
+      <button class="btn lg" id="json">${icon('download')} نزّل النسخة الكاملة</button></div>
   </div></div>`;
+  body.querySelector('#json').onclick = (e) => busy(e.currentTarget, async () => {
+    const data = await api.rpc('export_all');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(data)], { type: 'application/json' }));
+    a.download = `العجمي - نسخة كاملة ${todayISO()}.json`;
+    document.body.append(a); a.click(); a.remove();
+    ok('نزلت النسخة الكاملة');
+  });
   body.querySelectorAll('[data-k]').forEach((b) => b.onclick = () => busy(b, async () => { await downloadBackup(b.dataset.k || null); ok('نزلت النسخة الاحتياطية'); }));
   const now = body.querySelector('#now'), dir = body.querySelector('#dir'), open = body.querySelector('#open');
   if (now) now.onclick = () => busy(now, async () => { const r = await saveToFolder(); ok('اتحفظت في ' + r.dir); backup(app, body); });
