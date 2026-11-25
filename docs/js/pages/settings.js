@@ -1,6 +1,15 @@
 import { api } from '../api.js';
 import { desktop, hostCall, saveToFolder, downloadBackup } from '../backup.js';
-import { esc, money, moneyT, n, icon, ok, err, busy, modal, formData, tag, PERMS, emptyState, todayISO, dateT, confirmBox } from '../ui.js';
+import { esc, money, moneyT, n, icon, ok, err, busy, modal, formData, tag, PERMS, emptyState, todayISO, dateT, confirmBox, waLink } from '../ui.js';
+
+// لينك البرنامج اللي بيتبعت للمحاسب
+const SITE = 'https://engatoo-art.github.io/alagamy/';
+const welcomeText = (u, pw) => `أهلاً ${u.full_name || u.username}\nده لينك برنامج محل العجمي:\n${SITE}\nاسم الدخول: ${u.username}${pw ? '\nكلمة المرور: ' + pw + '\n(غيّرها من "حسابي" أول ما تدخل)' : ''}`;
+const contactLinks = (u, text) => [
+  u.whatsapp || u.phone ? `<a class="btn sm ghost" style="color:#128c4a" target="_blank" rel="noopener" href="${waLink(u.whatsapp || u.phone, text)}" title="واتساب">${icon('chat')} واتساب</a>` : '',
+  u.phone ? `<a class="btn sm ghost" href="tel:${esc(u.phone)}" title="اتصال">${icon('phone')}</a>` : '',
+  u.email ? `<a class="btn sm ghost" href="mailto:${esc(u.email)}" title="${esc(u.email)}">${icon('mail')}</a>` : '',
+].join('');
 
 export async function render({ app, el, query }) {
   const tabs = [
@@ -99,8 +108,10 @@ async function users(app, body, query) {
     const list = all.filter((u) => !u.deleted_at), gone = all.filter((u) => u.deleted_at);
     body.innerHTML = `<div class="row" style="margin-bottom:14px"><button class="btn primary" id="addUser">${icon('userPlus')} إضافة محاسب أو مدير</button>
         <span class="muted small">محدش يقدر يعمل حساب غير المدير من هنا.</span></div>
-      <div class="panel"><div class="tbl-wrap"><table class="t"><thead><tr><th>الاسم</th><th>اسم الدخول</th><th>النوع</th><th>الحالة</th><th>الصلاحيات</th><th></th></tr></thead>
-      <tbody>${list.map((u) => `<tr><td><b>${esc(u.full_name || '—')}</b>${u.id === app.me.id ? ' <span class="muted small">(انت)</span>' : ''}</td><td class="num">${esc(u.username)}</td>
+      <div class="panel"><div class="tbl-wrap"><table class="t"><thead><tr><th>الاسم</th><th>اسم الدخول</th><th>التواصل</th><th>النوع</th><th>الحالة</th><th>الصلاحيات</th><th></th></tr></thead>
+      <tbody>${list.map((u) => `<tr><td><b>${esc(u.full_name || '—')}</b>${u.id === app.me.id ? ' <span class="muted small">(انت)</span>' : ''}
+          ${u.phone ? `<div class="small muted num" dir="ltr" style="text-align:right">${esc(u.phone)}</div>` : ''}</td><td class="num">${esc(u.username)}</td>
+        <td style="white-space:nowrap">${contactLinks(u, welcomeText(u)) || '<span class="muted small">—</span>'}</td>
         <td>${u.role === 'admin' ? tag('approved', 'مدير') : 'محاسب'}</td><td>${u.active ? tag('ok', 'شغال') : tag('pending', 'موقوف')}</td>
         <td class="small muted">${u.role === 'admin' ? 'كل الصلاحيات' : PERMS.filter(([k]) => u.perms?.[k]).map(([, l]) => l).join('، ') || 'ولا حاجة'}</td>
         <td style="white-space:nowrap"><button class="btn sm ${u.active ? 'ghost' : 'primary'}" data-u="${u.id}">${u.active ? 'تعديل' : 'تفعيل'}</button>
@@ -141,11 +152,46 @@ async function users(app, body, query) {
         <label class="f">النوع<select class="in" name="role" ${self ? 'disabled' : ''}><option value="accountant" ${u.role !== 'admin' ? 'selected' : ''}>محاسب</option>
           <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير (كل الصلاحيات)</option></select></label>
         <label class="check" style="align-self:end"><input type="checkbox" name="active" checked ${self ? 'disabled' : ''}> الحساب شغال</label></div>
+        <div><b>بيانات التواصل</b> <span class="muted small">(اختياري)</span></div>
+        <div class="grid g3"><label class="f">رقم الموبايل<input class="in" name="phone" type="tel" dir="ltr" value="${esc(u.phone || '')}" placeholder="01xxxxxxxxx"></label>
+          <label class="f">رقم الواتساب<input class="in" name="whatsapp" type="tel" dir="ltr" value="${esc(u.whatsapp || '')}" placeholder="لو فاضي هيستخدم رقم الموبايل"></label>
+          <label class="f">الإيميل<input class="in" name="email" type="email" dir="ltr" value="${esc(u.email || '')}" placeholder="name@gmail.com"></label></div>
+        ${!isNew && !self ? `<div class="panel" style="margin:0;background:var(--paper-2, #f7f8f4)"><div class="pb grid" style="gap:10px">
+          <div><b>${icon('key')} نسي كلمة السر؟</b> <span class="muted small">اكتبله كلمة سر جديدة وابعتهاله. هيخرج من كل الأجهزة اللي فاتح عليها.</span></div>
+          <div class="row"><input class="in" id="npw" dir="ltr" autocomplete="new-password" placeholder="كلمة السر الجديدة (8 على الأقل)" style="flex:1;min-width:200px">
+            <button type="button" class="btn sm" id="gen">اعمل كلمة سر</button><button type="button" class="btn sm warn" id="setpw">${icon('key')} غيّر كلمة السر</button></div>
+        </div></div>` : ''}
         <div id="pp"><div class="row" style="margin:4px 0 10px"><b>الصلاحيات</b><button type="button" class="btn sm ghost" data-all>اختار الكل</button><button type="button" class="btn sm ghost" data-none>شيل الكل</button></div>
         <div class="perm-grid">${PERMS.map(([k, l]) => `<label class="check"><input type="checkbox" data-p="${k}" ${u.perms?.[k] ? 'checked' : ''}> ${l}</label>`).join('')}</div></div>
       </form>`,
       actions: '<button class="btn primary" data-ok>حفظ</button><button class="btn" data-close>رجوع</button>',
     });
+    const gen = m.$('#gen');
+    if (gen) {
+      gen.onclick = () => {
+        const a = 'abcdefghjkmnpqrstuvwxyz23456789';
+        const r = crypto.getRandomValues(new Uint32Array(8));
+        m.$('#npw').value = Array.from(r, (x) => a[x % a.length]).join('').replace(/^(.{4})/, '$1-');
+      };
+      m.$('#setpw').onclick = () => busy(m.$('#setpw'), async () => {
+        const pw = m.$('#npw').value.trim();
+        if (pw.length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل');
+        await api.rpc('save_user', { id: u.id, phone: m.$('[name=phone]').value.trim(), whatsapp: m.$('[name=whatsapp]').value.trim(), email: m.$('[name=email]').value.trim() });
+        await api.rpc('admin_set_password', { id: u.id, password: pw });
+        const cur = { ...u, phone: m.$('[name=phone]').value.trim() || u.phone, whatsapp: m.$('[name=whatsapp]').value.trim() || u.whatsapp, email: m.$('[name=email]').value.trim() || u.email };
+        m.close();
+        const d = modal({
+          title: 'كلمة السر اتغيرت',
+          body: `<div class="grid"><div>كلمة السر الجديدة لـ <b>${esc(u.full_name || u.username)}</b>:</div>
+            <div class="num" dir="ltr" style="font-size:24px;font-weight:700;text-align:center;padding:12px;border:2px dashed var(--line);border-radius:10px;user-select:all">${esc(pw)}</div>
+            <div class="muted small">اسم الدخول: <b class="num">${esc(u.username)}</b>. ابعتهاله دلوقتي — مش هتظهر تاني.</div>
+            <div class="row">${contactLinks(cur, welcomeText(cur, pw))}<button class="btn sm" id="cp">${icon('copy')} انسخ</button></div></div>`,
+          actions: '<button class="btn primary" data-close>تمام</button>',
+        });
+        d.$('#cp').onclick = async () => { try { await navigator.clipboard.writeText(welcomeText(cur, pw)); ok('اتنسخت الرسالة'); } catch { err(new Error('مش قادر أنسخ — انسخها بإيدك')); } };
+        draw().catch(err);
+      });
+    }
     const role = m.$('[name=role]');
     const syncRole = () => m.$('#pp').classList.toggle('hidden', role.value === 'admin');
     role.onchange = syncRole; syncRole();
@@ -157,7 +203,8 @@ async function users(app, body, query) {
         if (!m.$('[name=full_name]').value.trim()) throw new Error('اكتب اسم المحاسب');
         u.id = await api.createUser(m.$('[name=username]').value, m.$('[name=password]').value, m.$('[name=full_name]').value.trim());
       }
-      const p = { id: u.id, full_name: m.$('[name=full_name]').value.trim(), perms };
+      const p = { id: u.id, full_name: m.$('[name=full_name]').value.trim(), perms,
+        phone: m.$('[name=phone]').value.trim(), whatsapp: m.$('[name=whatsapp]').value.trim(), email: m.$('[name=email]').value.trim() };
       if (!self) { p.role = role.value; p.active = m.$('[name=active]').checked; }
       await api.rpc('save_user', p);
       ok(isNew ? `اتعمل حساب ${p.full_name} — اسم الدخول ${m.$('[name=username]').value.trim().toLowerCase()}` : 'اتحفظت الصلاحيات');

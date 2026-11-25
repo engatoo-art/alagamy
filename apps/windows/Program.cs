@@ -131,8 +131,9 @@ public class MainForm : Form
 
     private static void OpenExternal(string uri)
     {
-        // بنفتح بس لينكات النت العادية في المتصفح — أي حاجة تانية بتترفض
-        if (Uri.TryCreate(uri, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp))
+        // بنفتح بس لينكات النت والإيميل والتليفون في برامجها — أي حاجة تانية بتترفض
+        if (Uri.TryCreate(uri, UriKind.Absolute, out var u) && (u.Scheme == Uri.UriSchemeHttps || u.Scheme == Uri.UriSchemeHttp
+            || u.Scheme == Uri.UriSchemeMailto || u.Scheme == "tel"))
         {
             try { System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(u.AbsoluteUri) { UseShellExecute = true }); } catch { }
         }

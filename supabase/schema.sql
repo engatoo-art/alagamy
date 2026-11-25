@@ -478,6 +478,10 @@ alter table public.profiles add column if not exists deleted_at timestamptz;
 alter table public.profiles add column if not exists deleted_by uuid;
 alter table public.profiles add column if not exists was_active boolean;
 alter table public.profiles add column if not exists purged_at timestamptz;
+-- بيانات التواصل (اختياري)
+alter table public.profiles add column if not exists email text not null default '';
+alter table public.profiles add column if not exists phone text not null default '';
+alter table public.profiles add column if not exists whatsapp text not null default '';
 
 -- منع/فك الدخول من نظام تسجيل الدخول نفسه (لو الأعمدة دي مش موجودة بنكمل عادي)
 create or replace function public._auth_lock(uid uuid, lock boolean) returns void
@@ -519,6 +523,28 @@ begin
             'days_left', case when u.deleted_at is not null then greatest(0, ceil(extract(epoch from (u.deleted_at + interval '7 days' - now())) / 86400))::int end)
           order by u.created_at), '[]')
           from profiles u where u.purged_at is null);
+end $$;
+
+-- المدير بيغيّر كلمة سر حد نسيها. بتتشفر بنفس طريقة نظام الدخول (bcrypt)، وكل أجهزته بتخرج
+create or replace function public.admin_set_password(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare uid uuid := (p->>'id')::uuid; pw text := coalesce(p->>'password', ''); r profiles; n int;
+begin
+  perform _need_admin();
+  select * into r from profiles where id = uid and purged_at is null;
+  if not found then raise exception 'الحساب غير موجود'; end if;
+  if uid = auth.uid() then raise exception 'كلمة السر بتاعتك غيّرها من "حسابي"'; end if;
+  if length(pw) < 8 then raise exception 'كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل'; end if;
+  begin
+    execute 'update auth.users set encrypted_password = extensions.crypt($2, extensions.gen_salt(''bf'', 10)), updated_at = now() where id = $1'
+      using uid, pw;
+  exception when undefined_column then
+    execute 'update auth.users set encrypted_password = extensions.crypt($2, extensions.gen_salt(''bf'', 10)) where id = $1' using uid, pw;
+  end;
+  get diagnostics n = row_count;
+  if n = 0 then raise exception 'مش لاقي الحساب في نظام الدخول'; end if;
+  begin execute 'delete from auth.sessions where user_id = $1' using uid; exception when others then null; end;
+  return jsonb_build_object('ok', true, 'username', r.username);
 end $$;
 
 create or replace function public.delete_user(p jsonb) returns jsonb
@@ -565,8 +591,18 @@ begin
   if uid = auth.uid() and (coalesce(p->>'role', r.role) <> 'admin' or coalesce((p->>'active')::boolean, true) = false) then
     raise exception 'مينفعش تشيل صلاحية المدير أو توقف حسابك انت';
   end if;
+  if coalesce(trim(p->>'email'), '') <> '' and trim(p->>'email') !~ '^[^@\s]+@[^@\s]+\.[^@\s]+$' then
+    raise exception 'الإيميل مكتوب غلط';
+  end if;
+  if regexp_replace(coalesce(p->>'phone', ''), '[^0-9]', '', 'g') !~ '^([0-9]{8,15})?$'
+     or regexp_replace(coalesce(p->>'whatsapp', ''), '[^0-9]', '', 'g') !~ '^([0-9]{8,15})?$' then
+    raise exception 'رقم الموبايل أو الواتساب مكتوب غلط';
+  end if;
   update profiles set
     full_name = coalesce(p->>'full_name', full_name),
+    email = coalesce(lower(trim(p->>'email')), email),
+    phone = coalesce(regexp_replace(p->>'phone', '[^0-9+]', '', 'g'), phone),
+    whatsapp = coalesce(regexp_replace(p->>'whatsapp', '[^0-9+]', '', 'g'), whatsapp),
     role = coalesce(p->>'role', role),
     active = coalesce((p->>'active')::boolean, active),
     perms = coalesce(p->'perms', perms)
@@ -2140,6 +2176,7 @@ grant execute on function public.setup_needed(jsonb) to anon, authenticated;
 grant execute on function public.create_invite(jsonb) to authenticated;
 grant execute on function public.reset_drawer(jsonb) to authenticated;
 grant execute on function public.delete_user(jsonb) to authenticated;
+grant execute on function public.admin_set_password(jsonb) to authenticated;
 grant execute on function public.restore_user(jsonb) to authenticated;
 
 grant execute on function

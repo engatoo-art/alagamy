@@ -348,4 +348,20 @@ assert sql(f"select full_name from profiles where id = '{tmp}'") == "محاسب 
 new_user("temp1", "محاسب جديد بنفس الاسم", inviter=admin)
 ok("حذف حساب المحاسب: بيتقفل على طول، بيرجع خلال 7 أيام، وبعدها بيتمسح والاسم بيتحرر والفواتير بتفضل باسمه")
 
+# ---------- بيانات التواصل وتغيير كلمة السر من المدير ----------
+expect_error(admin, "save_user", {"id": acc, "email": "ahmed-at-gmail"}, "الإيميل")
+expect_error(admin, "save_user", {"id": acc, "phone": "012"}, "رقم")
+u = call(admin, "save_user", {"id": acc, "email": " Ahmed@Gmail.com ", "phone": "0101 234 5678", "whatsapp": "+20 101 234 5678"})
+assert u["email"] == "ahmed@gmail.com" and u["phone"] == "01012345678" and u["whatsapp"] == "+201012345678", u
+sql(f"update auth.users set encrypted_password = extensions.crypt('old-pass-1', extensions.gen_salt('bf')) where id = '{acc}'")
+sql(f"insert into auth.sessions(user_id) values ('{acc}')")
+expect_error(acc, "admin_set_password", {"id": mate, "password": "12345678"}, "للمدير بس")
+expect_error(admin, "admin_set_password", {"id": admin, "password": "12345678"}, "حسابي")
+expect_error(admin, "admin_set_password", {"id": acc, "password": "123"}, "8 حروف")
+call(admin, "admin_set_password", {"id": acc, "password": "new-pass-2026"})
+assert sql(f"select encrypted_password = extensions.crypt('new-pass-2026', encrypted_password) from auth.users where id = '{acc}'") == "t"
+assert sql(f"select encrypted_password like '$2a$%' from auth.users where id = '{acc}'") == "t"
+assert sql(f"select count(*) from auth.sessions where user_id = '{acc}'") == "0"
+ok("بيانات التواصل بتتحفظ مظبوطة، والمدير بيغيّر كلمة السر (bcrypt) وبيخرّج المحاسب من كل الأجهزة")
+
 print("\nكل الاختبارات نجحت ✔")

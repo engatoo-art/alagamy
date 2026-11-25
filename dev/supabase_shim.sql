@@ -12,6 +12,12 @@ create table if not exists auth.users (
   raw_user_meta_data jsonb default '{}'::jsonb,
   created_at timestamptz default now()
 );
+-- زي Supabase: كلمة السر بتتخزن مشفرة، والحساب ممكن يتمنع، والجلسات في جدول لوحدها
+alter table auth.users add column if not exists encrypted_password text;
+alter table auth.users add column if not exists banned_until timestamptz;
+create table if not exists auth.sessions (id uuid primary key default gen_random_uuid(), user_id uuid references auth.users(id) on delete cascade);
+create schema if not exists extensions;
+create extension if not exists pgcrypto schema extensions;
 create or replace function auth.uid() returns uuid language sql stable as $$
   select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
 $$;
