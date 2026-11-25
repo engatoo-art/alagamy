@@ -127,7 +127,12 @@ begin
 end;
 
 procedure CurStepChanged(CurStep: TSetupStep);
+var Lines: TArrayOfString;
 begin
   if CurStep = ssPostInstall then
-    SaveStringToUTF8File(ExpandConstant('{app}\backup-folder.txt'), BackupPage.Values[0], False);
+  begin
+    SetArrayLength(Lines, 1);
+    Lines[0] := BackupPage.Values[0];
+    SaveStringsToUTF8File(ExpandConstant('{app}\backup-folder.txt'), Lines, False);
+  end;
 end;
