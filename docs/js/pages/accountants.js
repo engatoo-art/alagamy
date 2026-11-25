@@ -1,6 +1,7 @@
 import { api } from '../api.js';
 import { esc, money, moneyT, qty, qtyT, n, icon, ok, err, busy, tag, date, emptyState, promptBox, PAY, CASH_CAT, UNIT } from '../ui.js';
 import { shiftDetailDoc } from '../print.js';
+import { chainNotes } from './cash.js';
 
 const dayT = (ts) => ts ? new Date(ts).toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' }) : '';
 const timeT = (ts) => ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', timeZone: 'Africa/Cairo' }) : '';
@@ -51,7 +52,7 @@ export async function renderOne({ app, el, params }) {
       const exp = closed ? n(s.expected_amount) : n(s.opening_amount) + n(s.live_in) - n(s.live_out);
       return `<tr class="click" data-s="${s.id}"><td class="num">${s.id}</td><td>${date(dayT(s.opened_at))} <span class="small muted">${timeT(s.opened_at)}</span></td>
         <td>${closed ? date(dayT(s.closed_at)) + ` <span class="small muted">${timeT(s.closed_at)}</span>` : ''}</td>
-        <td class="n">${money(s.opening_amount)}</td><td class="n t-in">${money(closed ? s.total_in : s.live_in)}</td><td class="n t-out">${money(closed ? s.total_out : s.live_out)}</td>
+        <td class="n">${money(s.opening_amount)}${n(s.prev_difference) > 0 ? `<div class="small t-in">منه ${moneyT(s.prev_difference)} زيادة من ${esc(s.prev_user_name || '')}</div>` : ''}${s.reset_by ? '<div class="small muted">بعد تصفير الدرج</div>' : ''}</td><td class="n t-in">${money(closed ? s.total_in : s.live_in)}</td><td class="n t-out">${money(closed ? s.total_out : s.live_out)}</td>
         <td class="n">${money(exp)}</td><td class="n"><b>${closed ? money(s.counted_amount) : '—'}</b></td>
         <td>${diffTag(s.difference, closed)}</td><td>${s.reviewed_at ? tag('ok', 'تمت المراجعة') : closed ? tag('pending', 'لسه') : ''}</td></tr>`;
     }).join('')}</tbody></table></div>` : emptyState('المحاسب ده لسه مفتحش عهد', '')}</div>`;
@@ -73,8 +74,9 @@ export async function renderShift({ app, el, params }) {
     ${closed && !d.reviewed_at && app.can('approve') ? `<button class="btn primary" id="rv">${icon('check')} تمت المراجعة وكله تمام</button>` : ''}
     <div class="sub">من ${date(dayT(d.opened_at))} ${timeT(d.opened_at)} ${closed ? `إلى ${date(dayT(d.closed_at))} ${timeT(d.closed_at)} — قفلها ${esc(d.closed_by_name || '')}` : '— لسه مفتوحة'}
       ${d.reviewed_at ? ` — راجعها ${esc(d.reviewed_by_name || '')}${d.review_note ? ': ' + esc(d.review_note) : ''}` : ''}</div></div>
+  ${chainNotes(d, app.can('approve')).replace(/class="alert /g, 'style="margin-bottom:12px" class="alert ')}
   <div class="ledger-strip">
-    <div><div class="k">أول العهدة</div><div class="v">${money(d.opening_amount)}</div></div>
+    <div><div class="k">أول العهدة</div><div class="v">${money(d.opening_amount)}</div><div class="h">${d.reset_by ? 'المدير صفّر الدرج' : d.prev_user_name ? 'من عهدة ' + esc(d.prev_user_name) : 'أول عهدة'}</div></div>
     <div><div class="k">دخل / خرج</div><div class="v"><span class="t-in">${money(tin)}</span> <small class="muted">/</small> <span class="t-out">${money(tout)}</span></div></div>
     <div><div class="k">المفروض في الدرج</div><div class="v">${money(exp)}</div></div>
     <div><div class="k">الفعلي</div><div class="v ${n(d.difference) < 0 ? 'neg' : ''}">${closed ? money(d.counted_amount) : '—'}</div></div>

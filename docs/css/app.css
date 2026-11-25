@@ -443,3 +443,12 @@ body {
 .panel > .ph h2 + .f.inl { margin-inline-start: auto; }
 .ledger-strip.s5 { grid-template-columns: repeat(5, 1fr); }
 @media (max-width: 1100px) { .ledger-strip.s5 { grid-template-columns: repeat(2, 1fr); } }
+
+/* قايمة الاختيار بتطلع فوق كل حاجة */
+.combo-list { position: fixed; z-index: 200; background: var(--sheet, #fff); border: 1px solid var(--line); border-radius: 10px;
+  box-shadow: 0 10px 30px rgba(29, 42, 36, .18); padding: 4px; overflow-y: auto; direction: rtl; }
+.combo-list .opt { padding: 9px 10px; border-radius: 6px; cursor: pointer; display: flex; justify-content: space-between; gap: 10px; }
+.combo-list .opt:hover, .combo-list .opt.hl { background: var(--crate-soft); }
+.combo-list .opt small { color: var(--ink-3); }
+.combo-list .opt > span { flex: 1; font-weight: 600; }
+.combo-list .opt small { white-space: nowrap; align-self: center; }

@@ -300,4 +300,30 @@ first_closed = [x for x in call(admin, "list_shifts", {"from": "2000-01-01"}) if
 rv = call(admin, "review_shift", {"id": first_closed["id"], "note": "تمام"})
 assert rv["reviewed_by_name"] == "المدير"
 ok(f"المحاسبين: منى عملت {mona['sales_count']} فاتورة، وتفاصيل العهدة فيها البيع والأصناف، والمراجعة اتسجلت")
+# ---------- ربط العهد ببعض وتصفير الدرج ----------
+cur = call(mate, "current_shift")
+if cur["shift"]:
+    call(admin, "close_shift", {})
+bal0 = float(call(acc, "current_shift")["cash_balance"])
+s1 = call(acc, "open_shift")
+assert float(s1["opening_amount"]) == bal0
+expect_error(admin, "reset_drawer", {}, "فيه عهدة مفتوحة")
+c1 = call(acc, "close_shift", {"counted": bal0 + 50})
+assert float(c1["difference"]) == 50
+s2 = call(mate, "open_shift")
+assert float(s2["opening_amount"]) == bal0 + 50 and float(s2["prev_difference"]) == 50 and s2["prev_user_name"] == "أحمد المحاسب", s2
+c2 = call(mate, "close_shift", {"counted": bal0 + 20})
+assert float(c2["difference"]) == -30
+expect_error(acc, "open_shift", {"zero": True}, "للمدير بس")
+expect_error(acc, "reset_drawer", {}, "للمدير بس")
+s3 = call(admin, "open_shift", {"zero": True})
+assert float(s3["opening_amount"]) == 0 and float(s3["reset_amount"]) == bal0 + 20 and float(s3["prev_difference"]) == -30, s3
+assert s3["reset_by_name"] == "المدير"
+call(admin, "close_shift", {"counted": 0})
+r = call(admin, "reset_drawer", {})
+assert float(r["reset"]) == 0 and float(r["cash_balance"]) == 0
+accs = {x["username"]: x for x in call(admin, "list_accountants")}
+assert float(accs["mona"]["short"]) >= 30 and float(accs["ahmed"]["over"]) >= 50
+ok("العهد مربوطة ببعض: الزيادة اتنقلت للعهدة اللي بعدها، العجز اتسجل على المحاسب، والتصفير للمدير بس")
+
 print("\nكل الاختبارات نجحت ✔")

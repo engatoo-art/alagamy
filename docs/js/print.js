@@ -247,7 +247,8 @@ export function shiftDetailDoc(r) {
   const d = n(r.difference);
   const when = (ts) => ts ? new Date(ts).toLocaleString('en-GB', { timeZone: 'Africa/Cairo', day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—';
   printDoc(`<div class="a4">${headA4(s, 'تفاصيل عهدة', r.id, esc(r.user_name))}
-    <table class="meta"><tr><td>فتحها: ${when(r.opened_at)}</td><td class="l">قفلها: ${closed ? when(r.closed_at) : 'لسه مفتوحة'}</td></tr></table>
+    <table class="meta"><tr><td>فتحها: ${when(r.opened_at)}</td><td class="l">قفلها: ${closed ? when(r.closed_at) : 'لسه مفتوحة'}</td></tr>
+      <tr><td colspan="2">${r.reset_by ? `المدير صفّر الدرج قبل العهدة دي${n(r.reset_amount) ? ' (كان المفروض فيه ' + m(r.reset_amount) + ')' : ''}` : r.prev_user_name ? `اتسلمت من عهدة ${esc(r.prev_user_name)} رقم ${r.prev_shift_id}` : 'أول عهدة'}${n(r.prev_difference) > 0 ? ` — منها ${m(r.prev_difference)} زيادة من عهدة ${esc(r.prev_user_name || '')}` : n(r.prev_difference) < 0 ? ` — العهدة اللي قبلها كان فيها عجز ${m(-n(r.prev_difference))}` : ''}</td></tr></table>
     <div class="grid"><div><small>أول العهدة</small><b>${m(r.opening_amount)}</b></div><div><small>دخل</small><b>${m(tin)}</b></div>
       <div><small>خرج</small><b>${m(tout)}</b></div><div><small>المفروض</small><b>${m(exp)}</b></div></div>
     <div class="grid" style="margin-top:8px"><div><small>الفعلي</small><b>${closed ? m(r.counted_amount) : '—'}</b></div>
@@ -306,10 +307,13 @@ export function shiftDoc(r, size = '80mm') {
       <tr><td>${d < 0 ? 'عجز' : d > 0 ? 'زيادة' : 'الفرق'}</td><td class="l"><b>${d ? m(Math.abs(d)) : 'مظبوطة'}</b></td></tr>` : ''}
     </table>`;
   const cats = r.by_category.filter((c) => !['shift_short', 'shift_over'].includes(c.category));
+  const chain = r.reset_by ? 'بدأت بعد تصفير الدرج' : r.prev_user_name ? 'اتسلمت من عهدة ' + esc(r.prev_user_name)
+    + (n(r.prev_difference) > 0 ? ` (منها ${m(r.prev_difference)} زيادة)` : '') : '';
   if (size === '80mm') {
     return printDoc(`<div class="r80">${head80(s, 'تقرير عهدة')}
       <table class="meta" style="margin-top:6px"><tr><td>المحاسب: <b>${esc(r.user_name)}</b></td><td class="l">رقم <span class="num">${r.id}</span></td></tr>
       <tr><td>من: ${when(r.opened_at)}</td><td class="l">إلى: ${closed ? when(r.closed_at) : 'لسه مفتوحة'}</td></tr></table>
+      ${chain ? `<p style="font-size:12px;margin:4px 0">${chain}</p>` : ''}
       <div style="margin-top:6px">${summary}</div>
       <table class="items" style="margin-top:6px"><tbody>${cats.map((c) => `<tr><td>${c.direction === 'in' ? 'دخل' : 'خرج'}: ${CASH_CAT[c.category] || c.category} (${c.count})</td><td class="l">${m(c.total)}</td></tr>`).join('')}</tbody></table>
       ${r.notes ? `<p style="font-size:12px">${esc(r.notes)}</p>` : ''}
@@ -317,6 +321,7 @@ export function shiftDoc(r, size = '80mm') {
   }
   printDoc(`<div class="a4">${headA4(s, 'تقرير عهدة', r.id, esc(r.user_name))}
     <table class="meta"><tr><td>فتحها: ${when(r.opened_at)}</td><td class="l">قفلها: ${closed ? when(r.closed_at) + ' — ' + esc(r.closed_by_name || '') : 'لسه مفتوحة'}</td></tr></table>
+    ${chain ? `<p>${chain}</p>` : ''}
     <div style="width:55%;margin:10px 0">${summary}</div>
     <table class="d"><thead><tr><th>الوقت</th><th>النوع</th><th>البيان</th><th>دخل</th><th>خرج</th></tr></thead>
     <tbody>${r.movements.map((x) => `<tr><td>${x.time}</td><td>${CASH_CAT[x.category] || x.category}</td><td>${esc(x.description)}</td>

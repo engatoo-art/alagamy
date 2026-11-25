@@ -145,6 +145,9 @@ export async function renderNew({ app, el, query }) {
     combo(pickIn, {
       items: () => pickables(L), label: (p) => p.label,
       sub: (p) => `باقي ${qtyT(left(p, L))} — ${dateT(p.ship_date)}`,
+      empty: (q) => (!items.length
+        ? 'مفيش بضاعة في المحل دلوقتي. الأصناف هنا بتيجي من <b>النقلات الواردة</b> — سجّل نقلة الأول وهتظهر هنا.'
+        : q ? `مفيش "${esc(q)}" في البضاعة الموجودة. لو لسه واصلة، سجّلها في النقلات الواردة.` : 'كل البضاعة اللي في النقلات اتباعت.'),
       onPick: (p) => { L.pick = p; L.unit = p.default_unit || 'kg'; syncUnit(); recalc(); tr.querySelector('[data-f=qty]').focus(); },
     });
     pickIn.addEventListener('input', () => { if (L.pick && pickIn.value !== L.pick.label) { L.pick = null; recalc(); } });

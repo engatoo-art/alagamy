@@ -232,6 +232,12 @@ create table if not exists public.cash_shifts (
   notes text not null default ''
 );
 alter table public.cash_shifts add column if not exists reviewed_by uuid references public.profiles(id);
+-- كل عهدة مربوطة باللي قبلها: اتسلمت من مين، وكان فيها عجز ولا زيادة، وهل المدير صفّر الدرج قبلها
+alter table public.cash_shifts add column if not exists prev_shift_id int;
+alter table public.cash_shifts add column if not exists prev_user_id uuid references public.profiles(id);
+alter table public.cash_shifts add column if not exists prev_difference numeric(14,2) not null default 0;
+alter table public.cash_shifts add column if not exists reset_amount numeric(14,2) not null default 0;
+alter table public.cash_shifts add column if not exists reset_by uuid references public.profiles(id);
 alter table public.cash_shifts add column if not exists reviewed_at timestamptz;
 alter table public.cash_shifts add column if not exists review_note text not null default '';
 
@@ -1297,6 +1303,7 @@ create or replace function public._shift_json(sid int) returns jsonb
 language sql stable security definer set search_path = public as $$
   select to_jsonb(sh) || jsonb_build_object(
     'user_name', _uname(sh.user_id), 'closed_by_name', _uname(sh.closed_by),
+    'prev_user_name', _uname(sh.prev_user_id), 'reset_by_name', _uname(sh.reset_by),
     'live_in', coalesce((select sum(amount) from cash_movements where shift_id = sh.id and direction = 'in'
                          and category <> 'shift_over'), 0),
     'live_out', coalesce((select sum(amount) from cash_movements where shift_id = sh.id and direction = 'out'
@@ -1320,17 +1327,53 @@ begin
   );
 end $$;
 
+-- تصفير الدرج: للمدير بس، ولما مايكونش فيه عهدة مفتوحة (مثلاً المدير استلم الفلوس والدرج فاضي)
+create or replace function public._reset_drawer(note text) returns numeric
+language plpgsql security definer set search_path = public as $$
+declare bal numeric := _cash_balance(date '2999-12-31'); last cash_shifts;
+begin
+  if bal = 0 then return 0; end if;
+  select * into last from cash_shifts where status = 'closed' order by closed_at desc limit 1;
+  insert into cash_movements(direction, amount, category, description, ref_type, ref_id, created_by, shift_id)
+  values (case when bal > 0 then 'out' else 'in' end, abs(bal), 'drawer_reset',
+          'تصفير الدرج بواسطة ' || _uname(auth.uid()) || coalesce(' بعد عهدة ' || _uname(last.user_id), '')
+            || ' — كان المفروض فيه ' || bal || coalesce(nullif(' — ' || note, ' — '), ''),
+          'shift', last.id, auth.uid(), null);
+  return bal;
+end $$;
+
+create or replace function public.reset_drawer(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare bal numeric;
+begin
+  perform _need_admin();
+  if exists (select 1 from cash_shifts where status = 'open') then
+    raise exception 'فيه عهدة مفتوحة — اقفلها الأول وبعدين صفّر الدرج';
+  end if;
+  bal := _reset_drawer(_t(p, 'notes'));
+  return jsonb_build_object('reset', bal, 'cash_balance', _cash_balance(date '2999-12-31'));
+end $$;
+
 create or replace function public.open_shift(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
-declare sid int;
+declare sid int; last cash_shifts; reset numeric := 0;
 begin
   perform _need_any(array['sales','cash','collections','payouts']);
+  perform pg_advisory_xact_lock(4243);
   if exists (select 1 from cash_shifts where status = 'open') then
     raise exception 'فيه عهدة مفتوحة باسم % — لازم تتقفل الأول',
       (select _uname(user_id) from cash_shifts where status = 'open' limit 1);
   end if;
-  insert into cash_shifts(user_id, opening_amount, notes)
-  values (auth.uid(), _cash_balance(date '2999-12-31'), _t(p, 'notes')) returning id into sid;
+  -- المحاسب مايقدرش يصفّر: لازم يستلم نفس الفلوس اللي اتقفلت بيها العهدة اللي قبله
+  if coalesce((p->>'zero')::boolean, false) then
+    perform _need_admin();
+    reset := _reset_drawer(_t(p, 'notes'));
+  end if;
+  select * into last from cash_shifts where status = 'closed' order by closed_at desc limit 1;
+  insert into cash_shifts(user_id, opening_amount, notes, prev_shift_id, prev_user_id, prev_difference, reset_amount, reset_by)
+  values (auth.uid(), _cash_balance(date '2999-12-31'), _t(p, 'notes'), last.id, last.user_id, coalesce(last.difference, 0),
+          reset, case when reset <> 0 or coalesce((p->>'zero')::boolean, false) then auth.uid() end)
+  returning id into sid;
   return _shift_json(sid);
 end $$;
 
@@ -2019,6 +2062,7 @@ revoke execute on all functions in schema public from public, anon, authenticate
 alter default privileges in schema public revoke execute on functions from public, anon, authenticated;
 grant execute on function public.setup_needed(jsonb) to anon, authenticated;
 grant execute on function public.create_invite(jsonb) to authenticated;
+grant execute on function public.reset_drawer(jsonb) to authenticated;
 
 grant execute on function
   public.app_bootstrap(jsonb), public.list_users(jsonb), public.save_user(jsonb), public.save_settings(jsonb),

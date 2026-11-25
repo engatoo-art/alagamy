@@ -49,7 +49,7 @@ export const CASH_CAT = {
   sale: 'بيع نقدي', collection: 'تحصيل من زبون', funding: 'تمويل الدرج', other_in: 'وارد آخر',
   crate_refund: 'رد رهن صناديق', supplier_payment: 'صرف لمورد', transport: 'أجرة نقل', bill: 'فاتورة / مصروفات',
   salary: 'يوميات وأجور', withdrawal: 'سحب من الدرج', other_out: 'مصروف آخر', sale_void: 'إلغاء فاتورة', payment_void: 'إلغاء دفعة',
-  shift_short: 'عجز في العهدة', shift_over: 'زيادة في العهدة', sale_edit: 'تعديل فاتورة', supplier_advance: 'مقدم لعميل (عهدة)', advance_return: 'رجوع مقدم من عميل',
+  shift_short: 'عجز في العهدة', shift_over: 'زيادة في العهدة', sale_edit: 'تعديل فاتورة', supplier_advance: 'مقدم لعميل (عهدة)', advance_return: 'رجوع مقدم من عميل', drawer_reset: 'تصفير الدرج (المدير)',
 };
 export const PERMS = [
   ['sales', 'البيع وعمل الفواتير'],
@@ -159,35 +159,60 @@ export function emptyState(title, hint = '') {
 }
 
 // قائمة اختيار بالبحث
-export function combo(input, { items, label, sub = () => '', onPick, max = 50 }) {
+export function combo(input, { items, label, sub = () => '', onPick, max = 50, empty = null }) {
   const wrap = input.parentElement;
   wrap.classList.add('combo');
   let list = null; let hl = 0; let shown = []; let closeT = 0;
-  const close = () => { list?.remove(); list = null; };
+  // القايمة بتطلع فوق الصفحة كلها (مش جوه الجدول) علشان محدش يقصّها لو الجدول بيتحرك يمين وشمال
+  const place = () => {
+    if (!list) return;
+    const r = input.getBoundingClientRect();
+    const w = Math.min(Math.max(r.width, 380), window.innerWidth - 16);
+    const below = window.innerHeight - r.bottom;
+    list.style.width = w + 'px';
+    list.style.left = Math.max(8, Math.min(r.right - w, window.innerWidth - w - 8)) + 'px';
+    if (below < 220 && r.top > below) { list.style.top = ''; list.style.bottom = (window.innerHeight - r.top + 4) + 'px'; list.style.maxHeight = Math.min(320, r.top - 12) + 'px'; }
+    else { list.style.bottom = ''; list.style.top = (r.bottom + 4) + 'px'; list.style.maxHeight = Math.min(320, below - 12) + 'px'; }
+  };
+  const close = () => {
+    list?.remove(); list = null;
+    window.removeEventListener('scroll', place, true); window.removeEventListener('resize', place);
+  };
   const render = () => {
     const q = input.value.trim().toLowerCase();
     shown = items().filter((it) => !q || label(it).toLowerCase().includes(q) || String(sub(it)).toLowerCase().includes(q)).slice(0, max);
-    if (!list) { list = document.createElement('div'); list.className = 'list'; wrap.append(list); }
+    if (!list) {
+      list = document.createElement('div'); list.className = 'combo-list';
+      list.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        const o = e.target.closest('.opt[data-i]');
+        if (o) pick(+o.dataset.i);
+      });
+      document.body.append(list);
+      window.addEventListener('scroll', place, true); window.addEventListener('resize', place);
+    }
     hl = Math.min(hl, Math.max(shown.length - 1, 0));
     list.innerHTML = shown.length
       ? shown.map((it, i) => `<div class="opt ${i === hl ? 'hl' : ''}" data-i="${i}"><span>${esc(label(it))}</span><small>${sub(it)}</small></div>`).join('')
-      : '<div class="opt muted">مفيش نتايج</div>';
+      : `<div class="opt muted" style="white-space:normal">${empty ? empty(q) : 'مفيش نتايج'}</div>`;
+    place();
+    list.querySelector('.opt.hl')?.scrollIntoView({ block: 'nearest' });
   };
   const pick = (i) => { const it = shown[i]; if (!it) return; input.value = label(it); close(); onPick(it); };
   input.addEventListener('focus', () => { clearTimeout(closeT); hl = 0; render(); });
+  input.addEventListener('click', () => { if (!list) { hl = 0; render(); } });
   input.addEventListener('input', () => { clearTimeout(closeT); hl = 0; render(); });
   input.addEventListener('keydown', (e) => {
-    if (!list) { if (e.key === 'Enter' && input.value.trim()) { render(); if (shown.length) { pick(0); e.preventDefault(); } } return; }
+    if (!list) { if (e.key === 'Enter' && input.value.trim()) { render(); if (shown.length) { pick(0); e.preventDefault(); } } else if (e.key === 'ArrowDown') { render(); e.preventDefault(); } return; }
     if (e.key === 'ArrowDown') { hl = Math.min(hl + 1, shown.length - 1); render(); e.preventDefault(); }
     else if (e.key === 'ArrowUp') { hl = Math.max(hl - 1, 0); render(); e.preventDefault(); }
     else if (e.key === 'Enter') { if (shown.length) { pick(hl); e.preventDefault(); } }
-    else if (e.key === 'Escape') close();
+    else if (e.key === 'Escape' || e.key === 'Tab') close();
   });
   input.addEventListener('blur', () => { closeT = setTimeout(close, 180); });
-  wrap.addEventListener('mousedown', (e) => {
-    const o = e.target.closest('.opt[data-i]');
-    if (o) { e.preventDefault(); pick(+o.dataset.i); }
-  });
+  // لو الخانة اتشالت من الصفحة (سطر اتمسح) نقفل القايمة
+  const mo = new MutationObserver(() => { if (!input.isConnected) { close(); mo.disconnect(); } });
+  mo.observe(document.body, { childList: true, subtree: true });
 }
 
 // أيقونات (بأسلوب Lucide)

@@ -11,6 +11,21 @@ const timeT = (ts) => ts ? new Date(ts).toLocaleTimeString('en-GB', { hour: '2-d
 const dayT = (ts) => ts ? new Date(ts).toLocaleDateString('en-CA', { timeZone: 'Africa/Cairo' }) : '';
 const expected = (s) => n(s.opening_amount) + n(s.live_in) - n(s.live_out);
 
+// ملاحظات ربط العهدة باللي قبلها: الزيادة بتبان للكل، والعجز بيبان للمدير
+export function chainNotes(s, admin) {
+  const out = [];
+  if (s.reset_by) {
+    out.push(`<div class="alert info">${esc(s.reset_by_name || 'المدير')} صفّر الدرج قبل العهدة دي${n(s.reset_amount) ? ` (كان المفروض فيه ${moneyT(s.reset_amount)})` : ''}، فبدأت من ${moneyT(s.opening_amount)}.</div>`);
+  }
+  const d = n(s.prev_difference);
+  if (s.prev_shift_id && d > 0) {
+    out.push(`<div class="alert warn">رصيد أول العهدة ${moneyT(s.opening_amount)} — منه <b>${moneyT(d)} زيادة من عهدة ${esc(s.prev_user_name || '')}</b> (عهدة رقم ${s.prev_shift_id}) اتضافت هنا.</div>`);
+  } else if (s.prev_shift_id && d < 0 && admin) {
+    out.push(`<div class="alert err">العهدة اللي قبلها (${esc(s.prev_user_name || '')} — رقم ${s.prev_shift_id}) كان فيها <b>عجز ${moneyT(-d)}</b> واتسجل عليه.</div>`);
+  }
+  return out.join('');
+}
+
 function cashModal(dir, after) {
   const cats = dir === 'in' ? IN_CATS : OUT_CATS;
   const m = modal({
@@ -90,18 +105,34 @@ export async function render({ app, el, query }) {
     const s = c.shift;
     if (!s) {
       const last = c.last;
-      body.innerHTML = `<div class="account">
+      const admin = app.can('approve');
+      const ld = last ? n(last.difference) : 0;
+      body.innerHTML = `
+        ${last && ld > 0 ? `<div class="alert warn" style="margin-bottom:14px">عهدة ${esc(last.user_name)} اتقفلت بزيادة <b>${moneyT(ld)}</b> — الزيادة دي هتتضاف للعهدة الجاية وهيبان إنها من عهدته.</div>` : ''}
+        ${last && ld < 0 && admin ? `<div class="alert err" style="margin-bottom:14px">عهدة ${esc(last.user_name)} اتقفلت بعجز <b>${moneyT(-ld)}</b> واتسجل عليه.</div>` : ''}
+        <div class="account">
           <div class="stamp"><div>مفيش<b>عهدة</b></div></div>
           <div><h1>مفيش عهدة مفتوحة دلوقتي</h1>
             <div class="meta">${last ? `آخر عهدة كانت مع <b>${esc(last.user_name)}</b> واتقفلت ${date(dayT(last.closed_at))} الساعة ${timeT(last.closed_at)} بـ ${moneyT(last.counted_amount)}` : 'دي أول عهدة في البرنامج'}</div></div>
           <div class="bal"><div class="k">هتبدأ عهدتك بـ</div><div class="v">${money(c.cash_balance)} <small>ج</small></div></div>
         </div>
-        <div class="row" style="margin-top:14px"><button class="btn primary lg" id="open">${icon('wallet')} افتح عهدتي</button>
-          <span class="muted">عدّ الفلوس اللي في الدرج الأول، واتأكد إنها ${moneyT(c.cash_balance)}.</span></div>`;
-      if (query.out) { query.out = null; setTimeout(() => toast('لازم تفتح عهدتك الأول علشان تسجّل مصروف'), 50); }
+        <div class="row" style="margin-top:14px"><button class="btn primary lg" id="open">${icon('wallet')} افتح عهدتي بـ ${moneyT(c.cash_balance)}</button>
+          ${admin && n(c.cash_balance) !== 0 ? `<button class="btn lg" id="zero">ابدأ من صفر (الدرج فاضي)</button><button class="btn ghost" id="reset">صفّر الدرج بس</button>` : ''}
+          <span class="muted">${admin ? 'لو الدرج فاضي (انت استلمت الفلوس) تقدر تصفّره وتبدأ من صفر.' : `عدّ الفلوس اللي في الدرج الأول، واتأكد إنها ${moneyT(c.cash_balance)}. العهدة بتبدأ بنفس الفلوس اللي اتقفلت بيها اللي قبلها، والمدير بس اللي يقدر يصفّرها.`}</span></div>`;
       body.querySelector('#open').onclick = async (e) => {
-        if (!await confirmBox(`هتستلم الدرج بـ <b>${moneyT(c.cash_balance)}</b>. الفلوس دي هتبقى على مسؤوليتك لحد ما تقفل العهدة.`, { title: 'فتح العهدة', yes: 'استلمت، افتح العهدة' })) return;
+        const extra = last && ld > 0 ? `<br>منها <b>${moneyT(ld)}</b> زيادة من عهدة ${esc(last.user_name)}.` : '';
+        if (!await confirmBox(`هتستلم الدرج بـ <b>${moneyT(c.cash_balance)}</b>.${extra}<br>الفلوس دي هتبقى على مسؤوليتك لحد ما تقفل العهدة.`, { title: 'فتح العهدة', yes: 'استلمت، افتح العهدة' })) return;
         await busy(e.target, async () => { await api.rpc('open_shift'); ok('عهدتك اتفتحت'); await drawShift(); });
+      };
+      const zero = body.querySelector('#zero'), reset = body.querySelector('#reset');
+      const zeroMsg = `الدرج مكتوب إن فيه <b>${moneyT(c.cash_balance)}</b>. التصفير معناه إن الدرج فاضي والفلوس دي معاك انت (المدير)، وهيتسجل باسمك في حركة الفلوس.`;
+      if (zero) zero.onclick = async () => {
+        if (!await confirmBox(zeroMsg + '<br>وبعدين هتتفتح عهدة جديدة باسمك من صفر.', { title: 'ابدأ من صفر', yes: 'صفّر وافتح العهدة', danger: true })) return;
+        await busy(zero, async () => { await api.rpc('open_shift', { zero: true }); ok('الدرج اتصفّر وعهدتك اتفتحت من صفر'); await drawShift(); });
+      };
+      if (reset) reset.onclick = async () => {
+        if (!await confirmBox(zeroMsg + '<br>المحاسب اللي هيفتح بعد كده هيبدأ من صفر.', { title: 'تصفير الدرج', yes: 'صفّر الدرج', danger: true })) return;
+        await busy(reset, async () => { const r = await api.rpc('reset_drawer'); ok(`الدرج اتصفّر (كان ${moneyT(r.reset)})`); await drawShift(); });
       };
       return;
     }
@@ -110,6 +141,7 @@ export async function render({ app, el, query }) {
     const rep = await api.rpc('shift_report', { id: s.id }).catch(() => null);
     body.innerHTML = `
       ${old ? `<div class="alert warn" style="margin-bottom:14px">العهدة دي مفتوحة من ${dateLong(dayT(s.opened_at))}. المفروض تتقفل آخر كل يوم.</div>` : ''}
+      ${chainNotes(s, app.can('approve')).replace(/class="alert /g, 'style="margin-bottom:14px" class="alert ')}
       ${!c.mine ? `<div class="alert ${app.can('approve') ? 'info' : 'warn'}" style="margin-bottom:14px">العهدة المفتوحة باسم <b>${esc(s.user_name)}</b>.${app.can('approve') ? ' انت مدير، فتقدر تقفلها.' : ' لازم يقفلها الأول علشان تفتح عهدتك.'}</div>` : ''}
       <div class="account">
         <div class="stamp"><div>عهدة<b class="num">${s.id}</b></div></div>
@@ -117,7 +149,7 @@ export async function render({ app, el, query }) {
         <div class="bal"><div class="k">المفروض يكون في الدرج</div><div class="v">${money(expected(s))} <small>ج</small></div></div>
       </div>
       <div class="ledger-strip" style="margin-top:14px;grid-template-columns:repeat(3,1fr)">
-        <div><div class="k">رصيد أول العهدة</div><div class="v">${money(s.opening_amount)}</div><div class="h">اتسلّم من العهدة اللي قبلها</div></div>
+        <div><div class="k">رصيد أول العهدة</div><div class="v">${money(s.opening_amount)}</div><div class="h">${s.reset_by ? 'المدير صفّر الدرج' : s.prev_user_name ? 'اتسلّم من عهدة ' + esc(s.prev_user_name) : 'أول عهدة'}${n(s.prev_difference) > 0 ? ` — منه ${moneyT(s.prev_difference)} زيادة` : ''}</div></div>
         <div><div class="k">دخل</div><div class="v pos">${money(s.live_in)}</div></div>
         <div><div class="k">خرج</div><div class="v neg">${money(s.live_out)}</div></div>
       </div>
@@ -132,7 +164,6 @@ export async function render({ app, el, query }) {
     body.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => cashModal(b.dataset.d, () => drawShift().catch(err)));
     const pr = body.querySelector('#pr');
     if (pr) pr.onclick = () => shiftDoc(rep, 'A4');
-    if (query.out && app.can('cash') && c.mine) { query.out = null; cashModal('out', () => drawShift().catch(err)); }
     bindGo();
   }
 
@@ -172,13 +203,14 @@ export async function render({ app, el, query }) {
     const [from] = monthRange(todayISO(), -1);
     const rows = await api.rpc('list_shifts', { from });
     body.innerHTML = `<div class="panel">${rows.length ? `<div class="tbl-wrap"><table class="t">
-      <thead><tr><th>رقم</th><th>المحاسب</th><th>فتحها</th><th>قفلها</th><th class="n">أول العهدة</th><th class="n">دخل</th><th class="n">خرج</th>
+      <thead><tr><th>رقم</th><th>المحاسب</th><th>اتسلمها من</th><th>فتحها</th><th>قفلها</th><th class="n">أول العهدة</th><th class="n">دخل</th><th class="n">خرج</th>
         <th class="n">المفروض</th><th class="n">الفعلي</th><th class="n">عجز / زيادة</th></tr></thead>
       <tbody>${rows.map((s) => {
         const closed = s.status === 'closed';
         const exp = closed ? n(s.expected_amount) : expected(s);
         const d = n(s.difference);
         return `<tr class="click" data-shift="${s.id}"><td class="num">${s.id}</td><td><b>${esc(s.user_name)}</b></td>
+          <td class="small">${s.reset_by ? '<span class="tag pending">المدير صفّر الدرج</span>' : esc(s.prev_user_name || '—')}${n(s.prev_difference) > 0 ? ` <span class="tag approved">+${moneyT(s.prev_difference)} زيادة</span>` : n(s.prev_difference) < 0 && app.can('approve') ? ` <span class="tag rejected">قبلها عجز ${moneyT(-n(s.prev_difference))}</span>` : ''}</td>
           <td class="small">${date(dayT(s.opened_at))} ${timeT(s.opened_at)}</td>
           <td class="small">${closed ? date(dayT(s.closed_at)) + ' ' + timeT(s.closed_at) : tag('pending', 'مفتوحة')}</td>
           <td class="n">${money(s.opening_amount)}</td><td class="n t-in">${money(closed ? s.total_in : s.live_in)}</td>

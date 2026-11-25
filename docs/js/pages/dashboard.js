@@ -25,7 +25,7 @@ export async function render({ app, el }) {
   <div class="tiles">
     ${app.can('sales') ? `<a href="#/sale" class="main">${icon('cart')}<b>بيع</b><span>فاتورة جديدة</span></a>` : ''}
     ${app.can('collections') ? `<a href="#/customers" class="c-teal">${icon('money')}<b>التحصيل</b><span>دفعة من زبون</span></a>` : ''}
-    ${app.can('cash') ? `<a href="#/cash?out=1" class="c-red">${icon('wallet')}<b>الخارج</b><span>مصروف من الدرج</span></a>` : ''}
+    ${app.can('cash') ? `<a href="#/out" class="c-red">${icon('wallet')}<b>الخارج</b><span>مصروف من الدرج</span></a>` : ''}
     <a href="#/suppliers" class="c-blue">${icon('truck')}<b>الموردين</b><span>النقلات والعملاء</span></a>
     <a href="#/stock" class="c-amber">${icon('box')}<b>الأصناف</b><span>البضاعة الموجودة</span></a>
     <a href="#/settlements" class="c-plum">${icon('receipt')}<b>فواتير الموردين</b><span>العمولة والنولون والدخان</span></a>
