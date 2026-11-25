@@ -1,10 +1,11 @@
 import { api } from '../api.js';
 import {
-  esc, money, moneyT, qty, qtyT, n, round2, icon, ok, err, busy, combo, confirmBox, promptBox, tag, statusTag,
+  esc, money, moneyT, qty, qtyT, n, round2, icon, ok, err, busy, combo, modal, confirmBox, promptBox, tag, statusTag,
   PAY, UNIT, todayISO, date, dateT, emptyState, debounce,
 } from '../ui.js';
 import { saleDoc } from '../print.js';
 import { customerForm } from './customers.js';
+import { doOrRequest } from '../requests.js';
 
 // ======================= بيع جديد =======================
 export async function renderNew({ app, el, query }) {
@@ -313,7 +314,7 @@ export async function renderView({ app, el, params }) {
   el.innerHTML = `
   <div class="page-head"><h1>فاتورة رقم <span class="num">${s.sale_no}</span></h1>
     <button class="btn primary" data-p="80mm">${icon('print')} إيصال</button><button class="btn" data-p="A4">طباعة A4</button>
-    ${app.can('sales_void') && !s.voided ? `<button class="btn danger" data-void>إلغاء الفاتورة</button>` : ''}
+    ${app.can('sales') && !s.voided ? `<button class="btn" data-edit>${icon('edit')} تعديل الأسعار</button><button class="btn danger" data-void>${icon('trash')} إلغاء الفاتورة</button>` : ''}
     <div class="sub">${date(s.sale_date)} — ${esc(d.created_by_name || '')}</div></div>
   ${s.voided ? `<div class="alert err" style="margin-bottom:14px">الفاتورة دي ملغية${s.void_reason ? ': ' + esc(s.void_reason) : ''}</div>` : ''}
   ${s.approval_status === 'pending' && !s.voided ? `<div class="alert warn" style="margin-bottom:14px">الفاتورة الآجل دي مستنية موافقة المدير</div>` : ''}
@@ -334,14 +335,66 @@ export async function renderView({ app, el, params }) {
     </div></div>
     ${s.notes ? `<div class="pb muted">ملاحظات: ${esc(s.notes)}</div>` : ''}</div>`;
   el.querySelectorAll('[data-p]').forEach((b) => b.onclick = () => saleDoc(d, b.dataset.p));
+  const reload = () => app.go('#/sales/' + s.id + '?r=' + Date.now());
   const v = el.querySelector('[data-void]');
   if (v) v.onclick = async () => {
-    const reason = await promptBox('سبب الإلغاء', { title: 'إلغاء الفاتورة', yes: 'إلغاء الفاتورة', danger: true });
-    if (reason === null) return;
-    await busy(v, async () => {
-      await api.rpc('void_sale', { id: s.id, reason });
-      ok('الفاتورة اتلغت' + (n(s.paid_amount) ? ' والمبلغ اتخصم من العهدة' : ''));
-      app.go('#/sales/' + s.id + '?r=' + Date.now());
+    if (app.can('approve')) {
+      const reason = await promptBox('سبب الإلغاء', { title: 'إلغاء الفاتورة', yes: 'إلغاء الفاتورة', danger: true });
+      if (reason === null) return;
+      return busy(v, async () => {
+        await api.rpc('void_sale', { id: s.id, reason });
+        ok('الفاتورة اتلغت' + (n(s.paid_amount) ? ' والمبلغ اتخصم من العهدة' : ''));
+        reload();
+      });
+    }
+    await busy(v, () => doOrRequest(app, {
+      kind: 'void_sale', target_id: s.id, summary: `إلغاء فاتورة رقم ${s.sale_no} — ${d.customer_display} — ${moneyT(s.grand_total)}`,
+    }));
+  };
+  const e = el.querySelector('[data-edit]');
+  if (e) e.onclick = () => {
+    const m = modal({
+      title: 'تعديل أسعار فاتورة ' + s.sale_no, wide: true,
+      body: `<table class="t"><thead><tr><th>الصنف</th><th>البيع</th><th>العدد</th><th>الوزن</th><th>السعر</th><th class="n">القيمة</th></tr></thead>
+        <tbody>${d.lines.map((l) => `<tr data-l="${l.id}" data-u="${l.unit}"><td><b>${esc(l.item)}</b></td><td>${UNIT[l.unit]}</td>
+          <td><input class="in" data-f="qty" type="number" min="0" value="${n(l.qty)}" style="width:80px"></td>
+          <td><input class="in" data-f="weight" type="number" min="0" step="0.001" value="${n(l.weight)}" style="width:100px" ${l.unit === 'count' ? 'disabled' : ''}></td>
+          <td><input class="in" data-f="price" type="number" min="0" step="0.01" value="${n(l.price)}" style="width:100px"></td>
+          <td class="n" data-a>${moneyT(l.amount)}</td></tr>`).join('')}</tbody></table>
+        <div class="alert info" id="tot" style="margin-top:12px"></div>
+        ${app.can('approve') ? '' : '<div class="alert warn" style="margin-top:8px">التعديل هيتبعت للمدير ومش هيتنفذ غير لما يوافق.</div>'}`,
+      actions: `<button class="btn primary" data-ok>${app.can('approve') ? 'حفظ التعديل' : 'ابعت للمدير'}</button><button class="btn" data-close>رجوع</button>`,
+    });
+    const rows = () => m.$$('tr[data-l]').map((tr) => ({
+      id: +tr.dataset.l, unit: tr.dataset.u,
+      qty: n(tr.querySelector('[data-f=qty]').value), weight: n(tr.querySelector('[data-f=weight]').value), price: n(tr.querySelector('[data-f=price]').value),
+    }));
+    const upd = () => {
+      let goods = 0;
+      rows().forEach((r) => {
+        const a = round2(r.unit === 'kg' ? r.weight * r.price : r.qty * r.price); goods += a;
+        m.$(`tr[data-l="${r.id}"] [data-a]`).textContent = moneyT(a);
+      });
+      const grand = goods + n(s.deposit_total) - n(s.discount);
+      m.$('#tot').innerHTML = `الإجمالي الجديد <b>${moneyT(grand)}</b> بدل ${moneyT(s.grand_total)}` +
+        (s.payment_type === 'cash' && grand !== n(s.grand_total) ? ` — الفرق ${moneyT(Math.abs(grand - n(s.grand_total)))} ${grand > n(s.grand_total) ? 'هيدخل' : 'هيخرج من'} العهدة` : '');
+    };
+    m.el.addEventListener('input', upd); upd();
+    m.$('[data-ok]').onclick = () => busy(m.$('[data-ok]'), async () => {
+      const lines = rows().map(({ id, qty: q, weight, price }) => ({ id, qty: q, weight, price }));
+      if (app.can('approve')) {
+        await api.rpc('edit_sale', { id: s.id, lines });
+        ok('اتعدلت الفاتورة'); m.close(); reload();
+      } else {
+        m.close();
+        await doOrRequest(app, {
+          kind: 'edit_sale', target_id: s.id, payload: { lines },
+          summary: `تعديل فاتورة رقم ${s.sale_no} — ${d.customer_display}: ` + rows().map((r) => {
+            const old = d.lines.find((l) => l.id === r.id);
+            return `${old.item} ${n(old.price) !== r.price ? `السعر ${moneyT(old.price)} ← ${moneyT(r.price)}` : ''}${n(old.weight) !== r.weight ? ` الوزن ${qtyT(old.weight)} ← ${qtyT(r.weight)}` : ''}${n(old.qty) !== r.qty ? ` العدد ${qtyT(old.qty)} ← ${qtyT(r.qty)}` : ''}`;
+          }).join('، '),
+        });
+      }
     });
   };
 }

@@ -21,12 +21,16 @@ export async function render({ app, el }) {
   ${d.pending ? `<div class="alert warn" style="margin-bottom:14px">فيه <b>${d.pending}</b> طلب مستني موافقتك. <a href="#/approvals">افتح الموافقات</a></div>` : ''}
   ${needBackup ? `<div class="alert info" style="margin-bottom:14px">بقالك أكتر من أسبوع من غير نسخة احتياطية Excel. <a href="#/settings?tab=backup">نزّل نسخة دلوقتي</a></div>` : ''}
 
-  <div class="quick">
-    ${app.can('sales') ? `<a href="#/sale">${icon('cart')}<b>بيع جديد</b><span>فاتورة نقدي أو آجل</span></a>` : ''}
-    ${app.can('collections') ? `<a href="#/customers">${icon('money')}<b>تحصيل</b><span>دفعة من حساب زبون</span></a>` : ''}
-    ${app.can('collections') ? `<a href="#/crates">${icon('crate')}<b>مرتجع صناديق</b><span>رد الرهن أو خصمه</span></a>` : ''}
-    ${app.can('suppliers') ? `<a href="#/shipments/new">${icon('truck')}<b>نقلة واردة</b><span>بضاعة جت من مورد</span></a>` : ''}
-    <a href="#/cash">${icon('wallet')}<b>العهدة</b><span>${cs.shift ? 'مع ' + esc(cs.shift.user_name) : 'مقفولة'}</span></a>
+  <div class="tiles">
+    ${app.can('sales') ? `<a href="#/sale" class="main">${icon('cart')}<b>بيع</b><span>فاتورة جديدة</span></a>` : ''}
+    ${app.can('collections') ? `<a href="#/customers">${icon('money')}<b>التحصيل</b><span>دفعة من زبون</span></a>` : ''}
+    ${app.can('cash') ? `<a href="#/cash?out=1">${icon('wallet')}<b>الخارج</b><span>مصروف من الدرج</span></a>` : ''}
+    <a href="#/suppliers">${icon('truck')}<b>الموردين</b><span>النقلات والعملاء</span></a>
+    <a href="#/stock">${icon('box')}<b>الأصناف</b><span>البضاعة الموجودة</span></a>
+    <a href="#/settlements">${icon('receipt')}<b>فواتير الموردين</b><span>العمولة والنولون والدخان</span></a>
+    ${app.can('collections') ? `<a href="#/crates">${icon('crate')}<b>الصناديق</b><span>المرتجع والرهن</span></a>` : ''}
+    <a href="#/cash">${icon('clock')}<b>العهدة</b><span>${cs.shift ? 'مع ' + esc(cs.shift.user_name) : 'مقفولة'}</span></a>
+    ${app.can('reports') ? `<a href="#/reports">${icon('chart')}<b>التقارير</b><span>يومي وشهري ومفصل</span></a>` : ''}
   </div>
 
   <div class="ledger-strip" style="margin-top:18px">
@@ -55,7 +59,7 @@ export async function render({ app, el }) {
     <div><div class="k">فلوس برة عند الزباين</div><div class="v neg">${money(d.total_debts)}</div><div class="h"><a href="#/debts">${d.debtors} زبون عليه فلوس</a></div></div>
     <div><div class="k">صناديق برة</div><div class="v">${money(d.crates_out)}</div><div class="h"><a href="#/crates">مين عليه صناديق</a></div></div>
     <div><div class="k">نقلات لسه بتتباع</div><div class="v">${d.open_shipments}</div><div class="h"><a href="#/shipments">النقلات</a></div></div>
-    <div><div class="k">مستحق للموردين</div><div class="v wait">${money(d.to_pay)}</div><div class="h"><a href="#/settlements">تصفيات متوافق عليها</a></div></div>
+    <div><div class="k">مستحق للموردين</div><div class="v wait">${money(d.to_pay)}</div><div class="h"><a href="#/settlements">فواتير متوافق عليها</a></div></div>
   </div>`;
 
   el.querySelectorAll('[data-go]').forEach((r) => r.onclick = () => app.go(r.dataset.go));

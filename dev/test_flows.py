@@ -192,4 +192,50 @@ assert len(call(admin, "list_shifts")) == 2 and len(call(mate, "list_shifts")) =
 call(admin, "shift_report", {"id": rep["id"]})
 expect_error(mate, "shift_report", {"id": rep["id"]}, "عهدة محاسب تاني")
 ok("سجل العهد والصلاحيات مظبوطين")
+
+# ===== طلبات التعديل والحذف والبضاعة والتقارير =====
+call(admin, "save_user", {"id": acc, "perms": {**perms, "reports": True}})
+sh2 = call(acc, "save_shipment", {"supplier_id": sup["id"], "items": [{"item_name": "جوافة", "qty": 30}, {"item_name": "ليمون", "qty": 10}]})
+stock = {x["item"]: x for x in call(acc, "list_stock") if x["shipment_id"] == sh2["id"]}
+assert stock["جوافة"]["remaining"] == 30 and stock["ليمون"]["supplier"] == "الحاج محمود"
+s3 = call(mate, "create_sale", {"customer_id": cash_c["id"], "payment_type": "cash", "lines": [
+    {"shipment_item_id": stock["جوافة"]["shipment_item_id"], "unit": "kg", "qty": 4, "weight": 80, "price": 10}]})
+expect_error(acc, "edit_sale", {"id": s3["sale"]["id"]}, "صلاحية")
+line_id = s3["lines"][0]["id"]
+rq = call(acc, "request_change", {"kind": "edit_sale", "target_id": s3["sale"]["id"], "reason": "السعر غلط",
+                                  "payload": {"lines": [{"id": line_id, "price": 12}]}})
+expect_error(acc, "request_change", {"kind": "edit_sale", "target_id": s3["sale"]["id"]}, "مستني")
+assert any(r["id"] == rq["id"] for r in call(admin, "pending_approvals")["requests"])
+call(admin, "decide_change", {"id": rq["id"], "approve": True})
+s3b = call(admin, "get_sale", {"id": s3["sale"]["id"]})
+assert float(s3b["sale"]["grand_total"]) == 960 and float(s3b["sale"]["paid_amount"]) == 960
+mv = call(admin, "report_money", {"direction": "in"})
+assert any(m["category"] == "sale_edit" and float(m["amount"]) == 160 for m in mv["movements"])
+ok("المحاسب طلب تعديل سعر، المدير وافق، والفاتورة اتعدلت وفرق 160 دخل العهدة")
+rq2 = call(acc, "request_change", {"kind": "void_sale", "target_id": s3["sale"]["id"], "reason": "الزبون رجّع البضاعة"})
+call(admin, "decide_change", {"id": rq2["id"], "approve": False, "note": "لا"})
+assert call(admin, "get_sale", {"id": s3["sale"]["id"]})["sale"]["voided"] is False
+rq3 = call(acc, "request_change", {"kind": "void_sale", "target_id": s3["sale"]["id"], "reason": "الزبون رجّع البضاعة"})
+call(admin, "decide_change", {"id": rq3["id"], "approve": True})
+assert call(admin, "get_sale", {"id": s3["sale"]["id"]})["sale"]["voided"] is True
+ok("طلب إلغاء اترفض مرة واتوافق عليه مرة")
+expect_error(acc, "stock_adjust", {"shipment_item_id": stock["ليمون"]["shipment_item_id"], "qty": 5}, "صلاحية")
+rq4 = call(acc, "request_change", {"kind": "stock_adjust", "target_id": stock["ليمون"]["shipment_item_id"], "payload": {"qty": 0}, "reason": "اتلف"})
+call(admin, "decide_change", {"id": rq4["id"], "approve": True})
+assert not any(x["item"] == "ليمون" and x["shipment_id"] == sh2["id"] for x in call(admin, "list_stock"))
+call(admin, "stock_adjust", {"shipment_item_id": stock["جوافة"]["shipment_item_id"], "qty": 50})
+assert [x for x in call(admin, "list_stock") if x["shipment_item_id"] == stock["جوافة"]["shipment_item_id"]][0]["remaining"] == 50
+ok("الأصناف: حذف بموافقة المدير، والمدير زوّد العدد على طول")
+stl2 = call(acc, "create_settlement", {"supplier_id": sup["id"], "shipment_ids": [sh2["id"]], "freight": 100, "unloading": 50})
+call(admin, "decide_settlement", {"id": stl2["id"], "approve": True})
+e = call(acc, "edit_settlement", {"id": stl2["id"], "commission_pct": 5, "unloading": 70})
+assert e["status"] == "pending" and float(e["unloading"]) == 70
+e = call(admin, "edit_settlement", {"id": stl2["id"], "freight": 120})
+assert float(e["net_amount"]) == float(e["gross_sales"]) - float(e["commission_amount"]) - 120 - 70
+ok("فاتورة المورد اتعدلت (العمولة والدخان والنولون) ورجعت تستنى موافقة لما المحاسب عدّل")
+rd = call(acc, "report_sales_detail", {"from": "2000-01-01"})
+assert rd["by_item"] and rd["lines"] and float(rd["totals"]["amount"]) > 0
+ro = call(acc, "report_money", {"direction": "out", "from": "2000-01-01"})
+assert ro["by_party"] and float(ro["total"]) > 0
+ok(f"التقارير المفصلة: {len(rd['lines'])} سطر بيع، {ro['count']} حركة خارجة")
 print("\nكل الاختبارات نجحت ✔")

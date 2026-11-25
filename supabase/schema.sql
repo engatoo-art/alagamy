@@ -31,6 +31,8 @@ create table if not exists public.shop_settings (
   updated_at timestamptz not null default now()
 );
 insert into public.shop_settings(id) values (1) on conflict do nothing;
+alter table public.shop_settings add column if not exists invoice_title text not null
+  default 'محلات عبده العجمي وأولاده (محمد وعبدالرحمن)';
 
 create table if not exists public.crate_types (
   id serial primary key,
@@ -257,6 +259,10 @@ language sql stable security definer set search_path = public as $$
     from profiles where id = auth.uid()), false)
 $$;
 
+-- بتبقى true بس جوه تنفيذ طلب وافق عليه المدير
+create or replace function public._approved_run() returns boolean
+language sql stable as $$ select coalesce(current_setting('app.approved_run', true), '') = '1' $$;
+
 create or replace function public._need(perm text default null) returns void
 language plpgsql stable security definer set search_path = public as $$
 begin
@@ -266,7 +272,7 @@ begin
   if not exists (select 1 from profiles where id = auth.uid() and active) then
     raise exception 'حسابك لسه مش متفعل — كلم المدير';
   end if;
-  if perm is not null and not public._has(perm) then
+  if perm is not null and not public._has(perm) and not public._approved_run() then
     raise exception 'مش عندك صلاحية للعملية دي';
   end if;
 end $$;
@@ -276,6 +282,7 @@ language plpgsql stable security definer set search_path = public as $$
 declare x text;
 begin
   perform public._need(null);
+  if public._approved_run() then return; end if;
   foreach x in array perms loop
     if public._has(x) then return; end if;
   end loop;
@@ -431,6 +438,7 @@ begin
     address = coalesce(p->>'address', address),
     default_commission = _n(p, 'default_commission', default_commission),
     receipt_footer = coalesce(p->>'receipt_footer', receipt_footer),
+    invoice_title = coalesce(nullif(_t(p, 'invoice_title'), ''), invoice_title),
     updated_at = now()
   where id = 1 returning * into r;
   return to_jsonb(r);
@@ -752,7 +760,7 @@ create or replace function public.delete_shipment(p jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare sh shipments;
 begin
-  perform _need('suppliers');
+  perform _need('approve');
   select * into sh from shipments where id = _i(p, 'id');
   if not found then raise exception 'النقلة غير موجودة'; end if;
   if sh.settlement_id is not null then raise exception 'النقلة دي اتعملها تصفية'; end if;
@@ -952,7 +960,7 @@ create or replace function public.void_sale(p jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
 declare s sales;
 begin
-  perform _need('sales_void');
+  perform _need('approve');
   select * into s from sales where id = _i(p, 'id') for update;
   if not found then raise exception 'الفاتورة غير موجودة'; end if;
   if s.voided then raise exception 'الفاتورة ملغية بالفعل'; end if;
@@ -1129,7 +1137,9 @@ begin
         'id', c.id, 'name', c.name, 'phone', c.phone, 'balance', _customer_balance(c.id)) order by c.id), '[]')
       from customers c where c.credit_requested and not c.credit_approved),
     'users', (select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'username', u.username, 'full_name', u.full_name)
-        order by u.created_at), '[]') from profiles u where not u.active and _has('users'))
+        order by u.created_at), '[]') from profiles u where not u.active and _has('users')),
+    'requests', (select coalesce(jsonb_agg(to_jsonb(r) || jsonb_build_object('by', _uname(r.requested_by)) order by r.id), '[]')
+      from change_requests r where r.status = 'pending')
   );
 end $$;
 
@@ -1314,7 +1324,232 @@ begin
             and (sh.user_id = auth.uid() or _has('cash') or _has('reports')));
 end $$;
 
+-- ===================== تعديل الفواتير والبضاعة =======================
+
+create or replace function public.edit_sale(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s sales; ln jsonb; l sale_lines; v_qty numeric; v_wt numeric; v_price numeric; amt numeric; room numeric;
+        goods numeric; grand numeric; delta numeric; newpaid numeric;
+begin
+  perform _need('approve');
+  select * into s from sales where id = _i(p, 'id') for update;
+  if not found then raise exception 'الفاتورة غير موجودة'; end if;
+  if s.voided then raise exception 'الفاتورة دي ملغية'; end if;
+  if exists (select 1 from sale_lines x join shipment_items si on si.id = x.shipment_item_id
+             join shipments sh on sh.id = si.shipment_id where x.sale_id = s.id and sh.settlement_id is not null) then
+    raise exception 'مينفعش تتعدل لأن النقلة بتاعتها اتعملها فاتورة مورد';
+  end if;
+  for ln in select * from jsonb_array_elements(coalesce(p->'lines', '[]')) loop
+    select * into l from sale_lines where id = _i(ln, 'id') and sale_id = s.id;
+    if not found then raise exception 'سطر غير موجود في الفاتورة'; end if;
+    v_qty := _n(ln, 'qty', l.qty); v_wt := _n(ln, 'weight', l.weight); v_price := _n(ln, 'price', l.price);
+    if v_qty < 0 or v_wt < 0 or v_price <= 0 then raise exception 'الأرقام غير صحيحة'; end if;
+    if l.unit = 'kg' and v_wt <= 0 then raise exception 'اكتب الوزن'; end if;
+    if l.shipment_item_id is not null then
+      select si.qty - _shipitem_sold(si.id) + l.qty into room from shipment_items si where si.id = l.shipment_item_id;
+      if v_qty > room then raise exception 'العدد أكبر من الموجود في النقلة (المتاح %)', room; end if;
+    end if;
+    amt := round(case when l.unit = 'kg' then v_wt * v_price else v_qty * v_price end, 2);
+    update sale_lines set qty = v_qty, weight = v_wt, price = v_price, amount = amt where id = l.id;
+  end loop;
+  select coalesce(sum(amount), 0) into goods from sale_lines where sale_id = s.id;
+  grand := goods + s.deposit_total - s.discount;
+  if grand < 0 then raise exception 'الخصم أكبر من الفاتورة'; end if;
+  newpaid := case when s.payment_type = 'cash' then grand else least(s.paid_amount, grand) end;
+  delta := newpaid - s.paid_amount;
+  update sales set goods_total = goods, grand_total = grand, paid_amount = newpaid,
+    notes = trim(notes || case when _t(p, 'reason') <> '' then ' | تعديل: ' || _t(p, 'reason') else ' | اتعدلت' end)
+  where id = s.id;
+  if delta > 0 then
+    perform _cash('in', delta, 'sale_edit', 'فرق تعديل فاتورة رقم ' || s.sale_no, '', 'sale', s.id);
+  elsif delta < 0 then
+    perform _cash('out', -delta, 'sale_edit', 'فرق تعديل فاتورة رقم ' || s.sale_no, '', 'sale', s.id);
+  end if;
+  return get_sale(jsonb_build_object('id', s.id));
+end $$;
+
+-- البضاعة الموجودة: كل صنف في كل نقلة لسه ما اتعملهاش فاتورة مورد
+create or replace function public.list_stock(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare q text := '%' || _t(p, 'search') || '%';
+begin
+  perform _need(null);
+  return (select coalesce(jsonb_agg(x order by x->>'item', x->>'ship_date'), '[]') from (
+    select jsonb_build_object(
+      'shipment_item_id', si.id, 'item_id', i.id, 'item', i.name, 'default_unit', i.default_unit,
+      'shipment_id', sh.id, 'ship_date', sh.ship_date, 'truck', sh.truck, 'supplier_id', su.id, 'supplier', su.name,
+      'qty', si.qty, 'sold', _shipitem_sold(si.id), 'remaining', si.qty - _shipitem_sold(si.id)) as x
+    from shipment_items si join shipments sh on sh.id = si.shipment_id
+    join items i on i.id = si.item_id join suppliers su on su.id = sh.supplier_id
+    where sh.settlement_id is null and (i.name ilike q or su.name ilike q)
+  ) t where coalesce((p->>'include_empty')::boolean, false) or (x->>'remaining')::numeric > 0);
+end $$;
+
+create or replace function public.stock_adjust(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare si shipment_items; open_ship boolean; sold numeric; newq numeric := _n(p, 'qty', -1);
+begin
+  perform _need('approve');
+  select * into si from shipment_items where id = _i(p, 'shipment_item_id') for update;
+  if not found then raise exception 'الصنف غير موجود'; end if;
+  select settlement_id is null into open_ship from shipments where id = si.shipment_id;
+  if not open_ship then raise exception 'النقلة دي اتعملها فاتورة مورد'; end if;
+  sold := _shipitem_sold(si.id);
+  if newq < sold then raise exception 'العدد مينفعش يقل عن اللي اتباع (%)', sold; end if;
+  if newq = 0 then
+    delete from shipment_items where id = si.id;
+    delete from shipments sh where sh.id = si.shipment_id and not exists (select 1 from shipment_items where shipment_id = sh.id);
+  else
+    update shipment_items set qty = newq where id = si.id;
+  end if;
+  return jsonb_build_object('ok', true, 'qty', newq, 'sold', sold);
+end $$;
+
+-- طلبات تعديل وحذف المحاسبين، والمدير بيوافق أو يرفض
+create table if not exists public.change_requests (
+  id serial primary key,
+  kind text not null check (kind in ('void_sale','edit_sale','stock_adjust','delete_shipment','void_payment')),
+  target_id int,
+  payload jsonb not null default '{}'::jsonb,
+  summary text not null default '',
+  reason text not null default '',
+  status text not null default 'pending' check (status in ('pending','approved','rejected')),
+  requested_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  decided_by uuid references public.profiles(id),
+  decided_at timestamptz,
+  decide_note text not null default ''
+);
+
+create or replace function public.request_change(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare k text := _t(p, 'kind'); rid int;
+begin
+  perform _need(null);
+  if k not in ('void_sale','edit_sale','stock_adjust','delete_shipment','void_payment') then raise exception 'نوع الطلب غير صحيح'; end if;
+  if exists (select 1 from change_requests where kind = k and target_id = _i(p, 'target_id') and status = 'pending') then
+    raise exception 'فيه طلب على نفس الحاجة لسه مستني موافقة المدير';
+  end if;
+  insert into change_requests(kind, target_id, payload, summary, reason, requested_by)
+  values (k, _i(p, 'target_id'), coalesce(p->'payload', '{}'::jsonb), _t(p, 'summary'), _t(p, 'reason'), auth.uid())
+  returning id into rid;
+  return jsonb_build_object('id', rid);
+end $$;
+
+create or replace function public.decide_change(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare r change_requests; ok boolean := coalesce((p->>'approve')::boolean, false);
+begin
+  perform _need('approve');
+  select * into r from change_requests where id = _i(p, 'id') for update;
+  if not found then raise exception 'الطلب غير موجود'; end if;
+  if r.status <> 'pending' then raise exception 'الطلب ده اتراجع قبل كده'; end if;
+  if ok then
+    perform set_config('app.approved_run', '1', true);
+    if r.kind = 'void_sale' then perform void_sale(r.payload || jsonb_build_object('id', r.target_id, 'reason', r.reason));
+    elsif r.kind = 'edit_sale' then perform edit_sale(r.payload || jsonb_build_object('id', r.target_id, 'reason', r.reason));
+    elsif r.kind = 'stock_adjust' then perform stock_adjust(r.payload || jsonb_build_object('shipment_item_id', r.target_id));
+    elsif r.kind = 'delete_shipment' then perform delete_shipment(jsonb_build_object('id', r.target_id));
+    elsif r.kind = 'void_payment' then perform void_payment(jsonb_build_object('id', r.target_id));
+    end if;
+    perform set_config('app.approved_run', '', true);
+  end if;
+  update change_requests set status = case when ok then 'approved' else 'rejected' end,
+    decided_by = auth.uid(), decided_at = now(), decide_note = _t(p, 'note')
+  where id = r.id;
+  return jsonb_build_object('ok', true);
+end $$;
+
+create or replace function public.list_requests(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  perform _need(null);
+  return (select coalesce(jsonb_agg(to_jsonb(r) || jsonb_build_object('by', _uname(r.requested_by), 'decided_by_name', _uname(r.decided_by))
+          order by r.id desc), '[]')
+          from change_requests r
+          where (coalesce(nullif(_t(p, 'status'), ''), 'pending') = 'all' or r.status = coalesce(nullif(_t(p, 'status'), ''), 'pending'))
+            and (_has('approve') or r.requested_by = auth.uid())
+          limit 200);
+end $$;
+
+-- تعديل فاتورة المورد (العمولة والنولون والدخان) قبل الصرف
+create or replace function public.edit_settlement(p jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare s settlements; pct numeric; comm numeric; fr numeric; un numeric; oth numeric;
+begin
+  perform _need_any(array['settlements','approve']);
+  select * into s from settlements where id = _i(p, 'id') for update;
+  if not found then raise exception 'الفاتورة غير موجودة'; end if;
+  if s.status not in ('pending','approved') then raise exception 'الفاتورة دي اتصرفت أو اترفضت ومينفعش تتعدل'; end if;
+  pct := _n(p, 'commission_pct', s.commission_pct);
+  if pct < 0 or pct > 100 then raise exception 'نسبة العمولة غير صحيحة'; end if;
+  comm := round(s.gross_sales * pct / 100, 2);
+  fr := _n(p, 'freight', s.freight); un := _n(p, 'unloading', s.unloading); oth := _n(p, 'other_expenses', s.other_expenses);
+  update settlements set commission_pct = pct, commission_amount = comm, freight = fr, unloading = un, other_expenses = oth,
+    other_label = coalesce(p->>'other_label', other_label), notes = coalesce(p->>'notes', notes),
+    net_amount = gross_sales - comm - fr - un - oth,
+    -- لو المحاسب عدّل بعد موافقة المدير، ترجع تستنى موافقة تاني
+    status = case when _has('approve') then status else 'pending' end,
+    decided_by = case when _has('approve') then decided_by else null end,
+    decided_at = case when _has('approve') then decided_at else null end
+  where id = s.id;
+  return get_settlement(jsonb_build_object('id', s.id));
+end $$;
+
 -- ============================ التقارير ================================
+
+create or replace function public.report_sales_detail(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare d1 date := _d(p, 'from'); d2 date := _d(p, 'to'); q text := '%' || _t(p, 'search') || '%';
+begin
+  perform _need('reports');
+  drop table if exists _rl;
+  create temp table _rl on commit drop as
+    select s.id sale_id, s.sale_no, s.sale_date, to_char(s.created_at at time zone 'Africa/Cairo', 'HH24:MI') tm,
+           coalesce(c.name, nullif(s.customer_name, ''), 'زبون نقدي') customer, s.payment_type,
+           i.name item, su.name supplier, l.unit, l.qty, l.weight, l.price, l.amount, l.crates
+    from sale_lines l join sales s on s.id = l.sale_id join items i on i.id = l.item_id
+    left join customers c on c.id = s.customer_id
+    left join shipment_items si on si.id = l.shipment_item_id left join shipments sh on sh.id = si.shipment_id
+    left join suppliers su on su.id = sh.supplier_id
+    where not s.voided and s.sale_date between d1 and d2
+      and (i.name ilike q or coalesce(c.name, s.customer_name, '') ilike q or coalesce(su.name, '') ilike q);
+  return jsonb_build_object('from', d1, 'to', d2,
+    'lines', (select coalesce(jsonb_agg(to_jsonb(r) order by r.item, r.sale_date, r.sale_no), '[]') from _rl r),
+    'by_item', (select coalesce(jsonb_agg(jsonb_build_object('item', item, 'qty', qty, 'weight', weight, 'amount', amount,
+                  'customers', customers, 'avg', case when weight > 0 then round(amount / weight, 2) when qty > 0 then round(amount / qty, 2) else 0 end)
+                  order by amount desc), '[]')
+                from (select item, sum(qty) qty, sum(weight) weight, sum(amount) amount, count(distinct customer) customers from _rl group by item) g),
+    'by_customer', (select coalesce(jsonb_agg(jsonb_build_object('customer', customer, 'qty', qty, 'weight', weight, 'amount', amount, 'invoices', inv)
+                  order by amount desc), '[]')
+                from (select customer, sum(qty) qty, sum(weight) weight, sum(amount) amount, count(distinct sale_id) inv from _rl group by customer) g),
+    'totals', (select jsonb_build_object('qty', coalesce(sum(qty), 0), 'weight', coalesce(sum(weight), 0), 'amount', coalesce(sum(amount), 0),
+                'invoices', count(distinct sale_id), 'customers', count(distinct customer)) from _rl));
+end $$;
+
+create or replace function public.report_money(p jsonb default '{}'::jsonb) returns jsonb
+language plpgsql security definer set search_path = public as $$
+declare d1 date := _d(p, 'from'); d2 date := _d(p, 'to'); dir text := coalesce(nullif(_t(p, 'direction'), ''), 'in');
+begin
+  perform _need_any(array['reports','cash']);
+  return jsonb_build_object('from', d1, 'to', d2, 'direction', dir,
+    'movements', (select coalesce(jsonb_agg(jsonb_build_object(
+        'date', m.mv_date, 'time', to_char(m.created_at at time zone 'Africa/Cairo', 'HH24:MI'), 'amount', m.amount,
+        'category', m.category, 'description', m.description, 'party', m.party, 'ref_type', m.ref_type, 'ref_id', m.ref_id,
+        'by', _uname(m.created_by)) order by m.mv_date, m.created_at), '[]')
+      from cash_movements m where m.direction = dir and m.mv_date between d1 and d2),
+    'by_party', (select coalesce(jsonb_agg(jsonb_build_object('party', party, 'count', cnt, 'total', total) order by total desc), '[]')
+      from (select coalesce(nullif(party, ''), 'بدون اسم') party, count(*) cnt, sum(amount) total from cash_movements
+            where direction = dir and mv_date between d1 and d2 group by 1) g),
+    'by_category', (select coalesce(jsonb_agg(jsonb_build_object('category', category, 'count', cnt, 'total', total) order by total desc), '[]')
+      from (select category, count(*) cnt, sum(amount) total from cash_movements
+            where direction = dir and mv_date between d1 and d2 group by 1) g),
+    'by_day', (select coalesce(jsonb_agg(jsonb_build_object('date', mv_date, 'count', cnt, 'total', total) order by mv_date), '[]')
+      from (select mv_date, count(*) cnt, sum(amount) total from cash_movements
+            where direction = dir and mv_date between d1 and d2 group by 1) g),
+    'total', (select coalesce(sum(amount), 0) from cash_movements where direction = dir and mv_date between d1 and d2),
+    'count', (select count(*) from cash_movements where direction = dir and mv_date between d1 and d2));
+end $$;
 
 create or replace function public.dashboard(p jsonb default '{}'::jsonb) returns jsonb
 language plpgsql security definer set search_path = public as $$
@@ -1341,7 +1576,8 @@ begin
         (select count(*) from sales where approval_status = 'pending' and not voided)
       + (select count(*) from settlements where status = 'pending')
       + (select count(*) from customers where credit_requested and not credit_approved)
-      + (select count(*) from profiles where not active and _has('users')) else 0 end,
+      + (select count(*) from profiles where not active and _has('users'))
+      + (select count(*) from change_requests where status = 'pending') else 0 end,
     'to_pay', (select coalesce(sum(net_amount), 0) from settlements where status = 'approved'),
     'week', (select coalesce(jsonb_agg(jsonb_build_object('date', g.d, 'total',
               (select coalesce(sum(grand_total), 0) from sales where sale_date = g.d and not voided)) order by g.d), '[]')
@@ -1438,6 +1674,7 @@ begin
     'crate_returns', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from crate_returns x),
     'settlements', (select coalesce(jsonb_agg(to_jsonb(x) - 'details' order by id), '[]') from settlements x),
     'cash_movements', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from cash_movements x),
+    'change_requests', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from change_requests x),
     'cash_shifts', (select coalesce(jsonb_agg(to_jsonb(x) || jsonb_build_object('user_name', _uname(x.user_id)) order by id), '[]') from cash_shifts x)
   );
 end $$;
@@ -1450,7 +1687,7 @@ declare t text;
 begin
   foreach t in array array['profiles','shop_settings','crate_types','items','suppliers','customers','settlements',
                            'shipments','shipment_items','sales','sale_lines','customer_payments','crate_returns','cash_movements',
-                           'cash_shifts']
+                           'cash_shifts','change_requests']
   loop
     execute format('alter table public.%I enable row level security', t);
     execute format('revoke all on public.%I from anon, authenticated', t);
@@ -1472,7 +1709,9 @@ grant execute on function
   public.decide_customer_credit(jsonb), public.add_cash(jsonb), public.cash_day(jsonb), public.dashboard(jsonb),
   public.report_period(jsonb), public.report_debts(jsonb), public.export_all(jsonb),
   public.current_shift(jsonb), public.open_shift(jsonb), public.close_shift(jsonb), public.shift_report(jsonb),
-  public.list_shifts(jsonb)
+  public.list_shifts(jsonb), public.edit_sale(jsonb), public.list_stock(jsonb), public.stock_adjust(jsonb),
+  public.request_change(jsonb), public.decide_change(jsonb), public.list_requests(jsonb), public.edit_settlement(jsonb),
+  public.report_sales_detail(jsonb), public.report_money(jsonb)
 to authenticated;
 
 -- تم ✔

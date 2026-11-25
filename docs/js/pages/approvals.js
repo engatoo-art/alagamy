@@ -1,13 +1,22 @@
 import { api } from '../api.js';
 import { esc, money, moneyT, icon, ok, err, busy, modal, date, emptyState, promptBox } from '../ui.js';
+import { KIND } from '../requests.js';
 
 export async function render({ app, el }) {
   const draw = async () => {
     const p = await api.rpc('pending_approvals');
-    const total = p.sales.length + p.settlements.length + p.customers.length + p.users.length;
+    const total = p.sales.length + p.settlements.length + p.customers.length + p.users.length + p.requests.length;
     app.setPending(total);
     el.innerHTML = `
     <div class="page-head"><h1>الموافقات</h1><div class="sub">${total ? `${total} طلب مستني قرارك` : 'مفيش حاجة مستنياك دلوقتي'}</div></div>
+
+    <div class="panel"><div class="ph"><h2>طلبات تعديل وحذف من المحاسبين</h2></div>${p.requests.length ? `<div class="tbl-wrap"><table class="t">
+      <thead><tr><th>الطلب</th><th>التفاصيل</th><th>السبب</th><th>المحاسب</th><th></th></tr></thead>
+      <tbody>${p.requests.map((r) => `<tr><td><b>${esc(KIND[r.kind] || r.kind)}</b><div class="small muted">${date(r.created_at.slice(0, 10))}</div></td>
+        <td>${esc(r.summary)} ${r.kind.endsWith('sale') ? `<a class="small" href="#/sales/${r.target_id}">افتح الفاتورة</a>` : ''}</td>
+        <td class="small">${esc(r.reason)}</td><td class="small muted">${esc(r.by)}</td>
+        <td class="row" style="flex-wrap:nowrap"><button class="btn sm primary" data-req="${r.id}" data-ok="1">موافقة وتنفيذ</button><button class="btn sm danger" data-req="${r.id}" data-ok="0">رفض</button></td></tr>`).join('')}</tbody></table></div>`
+      : emptyState('مفيش طلبات', '')}</div>
 
     ${p.users.length ? `<div class="panel"><div class="ph"><h2>حسابات جديدة مستنية تفعيل</h2><a class="btn sm" href="#/settings?tab=users">إدارة المستخدمين</a></div>
       <div class="tbl-wrap"><table class="t"><tbody>${p.users.map((u) => `<tr><td><b>${esc(u.full_name || u.username)}</b> <span class="muted num">${esc(u.username)}</span></td>
@@ -22,12 +31,12 @@ export async function render({ app, el }) {
         <td class="row" style="flex-wrap:nowrap"><button class="btn sm primary" data-sale="${s.id}" data-ok="1">موافقة</button><button class="btn sm danger" data-sale="${s.id}" data-ok="0">رفض وإلغاء</button></td></tr>`).join('')}</tbody></table></div>`
       : emptyState('مفيش فواتير آجل مستنية', '')}</div>
 
-    <div class="panel"><div class="ph"><h2>تصفيات الموردين قبل الصرف</h2></div>${p.settlements.length ? `<div class="tbl-wrap"><table class="t">
+    <div class="panel"><div class="ph"><h2>فواتير الموردين قبل الصرف</h2></div>${p.settlements.length ? `<div class="tbl-wrap"><table class="t">
       <thead><tr><th>رقم</th><th>المورد</th><th class="n">المبيعات</th><th class="n">العمولة</th><th class="n">المصاريف</th><th class="n">الصافي</th><th></th></tr></thead>
       <tbody>${p.settlements.map((s) => `<tr><td><a class="num" href="#/settlements/${s.id}">${s.settle_no}</a></td><td>${esc(s.supplier)}</td>
         <td class="n">${money(s.gross_sales)}</td><td class="n t-in">${money(s.commission_amount)}</td><td class="n">${money(s.expenses)}</td>
         <td class="n"><b>${money(s.net_amount)}</b></td><td><a class="btn sm primary" href="#/settlements/${s.id}">راجع ووافق</a></td></tr>`).join('')}</tbody></table></div>`
-      : emptyState('مفيش تصفيات مستنية', '')}</div>
+      : emptyState('مفيش فواتير مستنية', '')}</div>
 
     <div class="panel"><div class="ph"><h2>طلبات السماح بالآجل</h2></div>${p.customers.length ? `<div class="tbl-wrap"><table class="t">
       <tbody>${p.customers.map((c) => `<tr><td><a href="#/customers/${c.id}"><b>${esc(c.name)}</b></a> <span class="muted num">${esc(c.phone)}</span></td>
@@ -35,6 +44,12 @@ export async function render({ app, el }) {
         <td class="row" style="flex-wrap:nowrap"><button class="btn sm primary" data-cust="${c.id}" data-name="${esc(c.name)}">موافقة</button><button class="btn sm danger" data-custno="${c.id}">رفض</button></td></tr>`).join('')}</tbody></table></div>`
       : emptyState('مفيش طلبات', '')}</div>`;
 
+    el.querySelectorAll('[data-req]').forEach((b) => b.onclick = () => busy(b, async () => {
+      const yes = b.dataset.ok === '1';
+      await api.rpc('decide_change', { id: +b.dataset.req, approve: yes });
+      ok(yes ? 'اتوافق على الطلب واتنفذ' : 'الطلب اترفض');
+      await draw();
+    }));
     el.querySelectorAll('[data-sale]').forEach((b) => b.onclick = async () => {
       const yes = b.dataset.ok === '1';
       let reason = '';

@@ -21,6 +21,8 @@
 }
 
 * { box-sizing: border-box; }
+svg.ic { width: 18px; height: 18px; }
+.ph h2 svg.ic { width: 21px; height: 21px; vertical-align: -4px; margin-inline-end: 4px; color: var(--crate); }
 html, body { margin: 0; height: 100%; }
 body {
   font-family: var(--font);
@@ -79,15 +81,18 @@ h3 { font-size: 15px; font-weight: 700; }
 .side .me button:hover { background: rgba(255,255,255,.1); color: #fff; }
 .side .me button svg { width: 18px; height: 18px; }
 
-/* أزرار سريعة في الرئيسية */
-.quick { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 10px; }
-.quick a { display: grid; grid-template-columns: auto 1fr; grid-template-rows: auto auto; column-gap: 12px; align-items: center;
-  background: var(--sheet); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; text-decoration: none; color: var(--ink); }
-.quick a:hover { border-color: var(--crate); }
-.quick a svg { grid-row: span 2; width: 38px; height: 38px; padding: 8px; border-radius: 9px; background: var(--crate-soft); color: var(--crate); }
-.quick a:first-child svg { background: var(--crate); color: #fff; }
-.quick a b { font-size: 15px; }
-.quick a span { font-size: 12.5px; color: var(--ink-3); }
+/* مربعات الرئيسية */
+.tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 14px; max-width: 1000px; margin: 6px auto 0; }
+.tiles a { aspect-ratio: 1 / 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; text-align: center;
+  background: var(--sheet); border: 1px solid var(--line); border-radius: 18px; text-decoration: none; color: var(--ink); padding: 10px;
+  transition: border-color .15s, transform .15s; }
+.tiles a:hover { border-color: var(--crate); transform: translateY(-2px); }
+.tiles a svg { width: 54px; height: 54px; padding: 12px; border-radius: 16px; background: var(--crate-soft); color: var(--crate); margin-bottom: 4px; }
+.tiles a b { font-size: 16.5px; }
+.tiles a span { font-size: 12.5px; color: var(--ink-3); }
+.tiles a.main { background: var(--crate); border-color: var(--crate); color: #fff; }
+.tiles a.main svg { background: rgba(255,255,255,.15); color: #fff; }
+.tiles a.main span { color: #cfe5d8; }
 
 /* شريط سفلي للموبايل */
 .bottom-nav { display: none; }
@@ -316,7 +321,10 @@ table.t tr.void td { color: var(--ink-3); text-decoration: line-through; }
   .bottom-nav a.on { color: var(--crate); background: var(--crate-soft); }
   .page { padding-bottom: 90px; }
   .toasts { bottom: 80px; }
-  .quick { grid-template-columns: repeat(2, 1fr); }
+  .tiles { grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .tiles a svg { width: 46px; height: 46px; padding: 10px; }
+  .tiles a b { font-size: 14.5px; }
+  .tiles a span { display: none; }
   .page { padding: 16px 14px 60px; }
   .sale-grid { grid-template-columns: 1fr; }
   .totals { position: static; }

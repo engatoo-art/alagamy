@@ -1,7 +1,7 @@
 import { api } from '../api.js';
 import {
   esc, money, moneyT, n, icon, ok, err, busy, modal, formData, todayISO, addDays, dateLong, emptyState, CASH_CAT,
-  confirmBox, date, tag, monthRange,
+  confirmBox, date, tag, monthRange, toast,
 } from '../ui.js';
 import { cashDoc, shiftDoc } from '../print.js';
 
@@ -98,6 +98,7 @@ export async function render({ app, el, query }) {
         </div>
         <div class="row" style="margin-top:14px"><button class="btn primary lg" id="open">${icon('wallet')} افتح عهدتي</button>
           <span class="muted">عدّ الفلوس اللي في الدرج الأول، واتأكد إنها ${moneyT(c.cash_balance)}.</span></div>`;
+      if (query.out) { query.out = null; setTimeout(() => toast('لازم تفتح عهدتك الأول علشان تسجّل مصروف'), 50); }
       body.querySelector('#open').onclick = async (e) => {
         if (!await confirmBox(`هتستلم الدرج بـ <b>${moneyT(c.cash_balance)}</b>. الفلوس دي هتبقى على مسؤوليتك لحد ما تقفل العهدة.`, { title: 'فتح العهدة', yes: 'استلمت، افتح العهدة' })) return;
         await busy(e.target, async () => { await api.rpc('open_shift'); ok('عهدتك اتفتحت'); await drawShift(); });
@@ -131,6 +132,7 @@ export async function render({ app, el, query }) {
     body.querySelectorAll('[data-d]').forEach((b) => b.onclick = () => cashModal(b.dataset.d, () => drawShift().catch(err)));
     const pr = body.querySelector('#pr');
     if (pr) pr.onclick = () => shiftDoc(rep, 'A4');
+    if (query.out && app.can('cash') && c.mine) { query.out = null; cashModal('out', () => drawShift().catch(err)); }
     bindGo();
   }
 

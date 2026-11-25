@@ -169,32 +169,57 @@ export function statementDoc(st, s) {
     <div class="sign"><div>المحاسب</div><div>المدير</div><div>توقيع الزبون</div></div></div>`, { size: 'A4', title: 'كشف حساب ' + c.name });
 }
 
-// ---------- تصفية مورد ----------
+// ---------- فاتورة المورد (صاحب النقلة) ----------
 export function settlementDoc(st) {
-  const s = st.settings; const lines = st.details?.lines || []; const items = st.details?.items || [];
-  printDoc(`<div class="a4">${headA4(s, 'فاتورة تصفية مورد', st.settle_no, dateLong(st.created_at))}
-    <div class="grid"><div><small>المورد</small><b>${esc(st.supplier.name)}</b></div>
-      <div><small>النقلات</small><b>${st.shipments.map((x) => dateT(x.ship_date) + (x.truck ? ' (' + esc(x.truck) + ')' : '')).join('، ')}</b></div>
-      <div><small>الحالة</small><b>${STATUS[st.status] || ''}</b></div><div><small>الوزن الكلي المباع</small><b>${q(st.total_weight)} ك</b></div></div>
-    <h2>المبيعات حسب سعر البيع</h2>
-    <table class="d"><thead><tr><th>الصنف</th><th>العدد</th><th>الوزن (ك)</th><th>السعر</th><th>القيمة</th></tr></thead>
-    <tbody>${lines.map((l) => `<tr><td>${esc(l.item)}</td><td>${q(l.qty)}</td><td>${l.unit === 'kg' ? q(l.weight) : '—'}</td>
-      <td>${m(l.price)} / ${l.unit === 'kg' ? 'ك' : 'وحدة'}</td><td>${m(l.amount)}</td></tr>`).join('')}</tbody>
-    <tfoot><tr><td>الإجمالي</td><td>${q(st.total_qty)}</td><td>${q(st.total_weight)}</td><td></td><td>${m(st.gross_sales)}</td></tr></tfoot></table>
-    <h2>ملخص الأصناف</h2>
-    <table class="d"><thead><tr><th>الصنف</th><th>الوارد</th><th>المباع</th><th>الباقي</th><th>الوزن</th><th>القيمة</th></tr></thead>
-    <tbody>${items.map((l) => `<tr><td>${esc(l.item)}</td><td>${q(l.qty_in)}</td><td>${q(l.qty_sold)}</td><td>${q(l.remaining)}</td><td>${q(l.weight)}</td><td>${m(l.amount)}</td></tr>`).join('')}</tbody></table>
-    <h2>الحساب</h2>
-    <table class="d" style="width:55%"><tbody>
-      <tr><td>إجمالي المبيعات</td><td>${m(st.gross_sales)}</td></tr>
-      <tr><td>العمولة (${q(st.commission_pct)}%)</td><td>- ${m(st.commission_amount)}</td></tr>
-      ${n(st.freight) ? `<tr><td>النولون</td><td>- ${m(st.freight)}</td></tr>` : ''}
-      ${n(st.unloading) ? `<tr><td>العتالة</td><td>- ${m(st.unloading)}</td></tr>` : ''}
-      ${n(st.other_expenses) ? `<tr><td>${esc(st.other_label || 'مصاريف أخرى')}</td><td>- ${m(st.other_expenses)}</td></tr>` : ''}
-    </tbody><tfoot><tr><td>صافي المستحق للمورد</td><td>${m(st.net_amount)}</td></tr></tfoot></table>
-    ${st.notes ? `<p>ملاحظات: ${esc(st.notes)}</p>` : ''}
-    <div class="sign"><div>المحاسب: ${esc(st.created_by_name || '')}</div><div>اعتماد المدير: ${esc(st.decided_by_name || '')}</div><div>توقيع المورد بالاستلام</div></div></div>`,
-  { size: 'A4', title: 'تصفية ' + st.settle_no });
+  const s = st.settings; const lines = st.details?.lines || [];
+  const title = s.invoice_title || 'محلات عبده العجمي وأولاده (محمد وعبدالرحمن)';
+  const ded = [['النولون', st.freight], ['العمولة' + (n(st.commission_pct) ? ` (${qtyT(st.commission_pct)}%)` : ''), st.commission_amount],
+    ['الدخان', st.unloading], [st.other_label || 'مصاريف أخرى', st.other_expenses]].filter(([, v]) => n(v));
+  const css = `
+    .inv { padding: 10mm 12mm; }
+    .inv .hd { text-align: center; position: relative; }
+    .inv .hd img { width: 78px; height: 78px; display: block; margin: 0 auto 4px; }
+    .inv .hd h1 { font-size: 24px; margin: 0; }
+    .inv .hd h2 { font-size: 19px; margin: 6px 0 0; font-weight: 600; }
+    .inv .hd h2 b { border-bottom: 2px solid #000; padding: 0 10px; }
+    .inv .meta { position: absolute; top: 0; left: 0; text-align: left; font-size: 12px; line-height: 1.7; }
+    .inv .box { display: grid; grid-template-columns: 34% 66%; border: 2px solid #000; border-radius: 6px; margin-top: 14px; min-height: 120mm; }
+    .inv .sum { border-inline-end: 2px solid #000; padding: 10px 12px; display: flex; flex-direction: column; }
+    .inv .sum .r { display: flex; justify-content: space-between; padding: 7px 0; font-size: 15px; border-bottom: 1px dashed #777; }
+    .inv .sum .r.tot { font-weight: 700; font-size: 16px; border-bottom: 1.5px solid #000; }
+    .inv .sum .r.net { margin-top: 10px; border: 2px solid #000; border-radius: 5px; padding: 10px 8px; font-size: 19px; font-weight: 700; }
+    .inv .det { padding: 0; }
+    .inv .det table th { border-bottom: 1.5px solid #000; padding: 7px 8px; font-size: 13.5px; text-align: center; background: #f1f1f1; }
+    .inv .det table td { padding: 6px 8px; font-size: 14px; text-align: center; border-bottom: 1px solid #ccc; }
+    .inv .det table td.it { text-align: right; font-weight: 600; }
+    .inv .det table tfoot td { border-top: 1.5px solid #000; border-bottom: 0; font-weight: 700; background: #f7f7f7; }
+    .inv .sig { display: flex; justify-content: space-between; margin-top: 28px; font-size: 13px; }
+    .inv .sig div { width: 30%; text-align: center; border-top: 1px solid #000; padding-top: 4px; }`;
+  printDoc(`<style>${css}</style><div class="inv">
+    <div class="hd">
+      <div class="meta">رقم <span class="num">${st.settle_no}</span><br>${dateT(String(st.created_at).slice(0, 10))}
+        ${st.shipments.length ? `<br>النقلة: ${st.shipments.map((x) => dateT(x.ship_date) + (x.truck ? ' (' + esc(x.truck) + ')' : '')).join('، ')}` : ''}</div>
+      ${logo()}
+      <h1>${esc(title)}</h1>
+      <h2>فاتورة <b>${esc(st.supplier.name)}</b></h2>
+    </div>
+    <div class="box">
+      <div class="sum">
+        <div class="r tot"><span>المجموع</span><span>${m(st.gross_sales)}</span></div>
+        ${ded.map(([k, v]) => `<div class="r"><span>${esc(k)}</span><span>- ${m(v)}</span></div>`).join('')}
+        <div class="r net"><span>الصافي</span><span>${m(st.net_amount)}</span></div>
+        <div style="margin-top:auto;font-size:12px;padding-top:10px">الوزن الكلي: <b>${q(st.total_weight)}</b> ك<br>العدد الكلي: <b>${q(st.total_qty)}</b></div>
+      </div>
+      <div class="det"><table>
+        <thead><tr><th>العدد</th><th>الصنف</th><th>الوزن</th><th>السعر</th><th>المجموع</th></tr></thead>
+        <tbody>${lines.map((l) => `<tr><td>${q(l.qty)}</td><td class="it">${esc(l.item)}</td>
+          <td>${l.unit === 'kg' ? q(l.weight) : '—'}</td><td>${m(l.price)}</td><td>${m(l.amount)}</td></tr>`).join('')}</tbody>
+        <tfoot><tr><td>${q(st.total_qty)}</td><td class="it">الإجمالي</td><td>${q(st.total_weight)}</td><td></td><td>${m(st.gross_sales)}</td></tr></tfoot>
+      </table></div>
+    </div>
+    ${st.notes ? `<p style="font-size:13px">ملاحظات: ${esc(st.notes)}</p>` : ''}
+    <div class="sig"><div>المحاسب</div><div>المدير</div><div>توقيع العميل بالاستلام</div></div>
+  </div>`, { size: 'A4', title: 'فاتورة ' + st.supplier.name });
 }
 
 // ---------- العهدة ----------
@@ -271,6 +296,49 @@ export function reportDoc(r, s, title) {
     ${r.days.length > 1 ? `<h2>حسب اليوم</h2><table class="d"><thead><tr><th>اليوم</th><th>المبيعات</th><th>وارد العهدة</th><th>منصرف العهدة</th><th>رصيد آخر اليوم</th></tr></thead>
     <tbody>${r.days.map((x) => `<tr><td>${dateT(x.date)}</td><td>${m(x.sales)}</td><td>${m(x.cash_in)}</td><td>${m(x.cash_out)}</td><td>${m(x.closing)}</td></tr>`).join('')}</tbody></table>` : ''}
     <div class="sign"><div>المحاسب</div><div>المدير</div><div></div></div></div>`, { size: 'A4', title });
+}
+
+// ---------- تقرير المبيعات بالتفصيل ----------
+export function salesDetailDoc(r, s) {
+  const groups = {};
+  r.lines.forEach((l) => (groups[l.item] = groups[l.item] || []).push(l));
+  const period = r.from === r.to ? dateLong(r.from) : `من ${dateT(r.from)} إلى ${dateT(r.to)}`;
+  printDoc(`<div class="a4">${headA4(s, 'تقرير المبيعات بالتفصيل', null, period)}
+    <div class="grid"><div><small>إجمالي المبيعات</small><b>${m(r.totals.amount)}</b></div><div><small>العدد</small><b>${q(r.totals.qty)}</b></div>
+      <div><small>الوزن</small><b>${q(r.totals.weight)} ك</b></div><div><small>الفواتير / الزباين</small><b>${r.totals.invoices} / ${r.totals.customers}</b></div></div>
+    <h2>كل صنف لوحده</h2>
+    <table class="d"><thead><tr><th>الصنف</th><th>العدد</th><th>الوزن</th><th>متوسط السعر</th><th>المجموع</th></tr></thead>
+    <tbody>${r.by_item.map((x) => `<tr><td><b>${esc(x.item)}</b></td><td>${q(x.qty)}</td><td>${q(x.weight)}</td><td>${m(x.avg)}</td><td>${m(x.amount)}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td>الإجمالي</td><td>${q(r.totals.qty)}</td><td>${q(r.totals.weight)}</td><td></td><td>${m(r.totals.amount)}</td></tr></tfoot></table>
+    ${Object.entries(groups).map(([item, ls]) => {
+      const sum = ls.reduce((a, l) => ({ q: a.q + n(l.qty), w: a.w + n(l.weight), v: a.v + n(l.amount) }), { q: 0, w: 0, v: 0 });
+      return `<h2>${esc(item)}</h2><table class="d"><thead><tr><th>التاريخ</th><th>فاتورة</th><th>الزبون</th><th>صاحب البضاعة</th><th>العدد</th><th>الوزن</th><th>السعر</th><th>المجموع</th></tr></thead>
+      <tbody>${ls.map((l) => `<tr><td>${dateT(l.sale_date)}</td><td class="num">${l.sale_no}</td><td><b>${esc(l.customer)}</b></td><td>${esc(l.supplier || '')}</td>
+        <td>${q(l.qty)}</td><td>${l.unit === 'kg' ? q(l.weight) : '—'}</td><td>${m(l.price)}</td><td>${m(l.amount)}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="4">إجمالي ${esc(item)}</td><td>${q(sum.q)}</td><td>${q(sum.w)}</td><td></td><td>${m(sum.v)}</td></tr></tfoot></table>`;
+    }).join('')}
+    <div class="sign"><div>المحاسب</div><div>المدير</div><div></div></div></div>`, { size: 'A4', title: 'تقرير المبيعات' });
+}
+
+// ---------- تقرير الفلوس اللي دخلت أو خرجت ----------
+export function moneyDoc(r, s) {
+  const isIn = r.direction === 'in';
+  const period = r.from === r.to ? dateLong(r.from) : `من ${dateT(r.from)} إلى ${dateT(r.to)}`;
+  printDoc(`<div class="a4">${headA4(s, isIn ? 'تقرير الفلوس اللي دخلت' : 'تقرير الفلوس اللي خرجت', null, period)}
+    <div class="grid" style="grid-template-columns:repeat(3,1fr)"><div><small>الإجمالي</small><b>${m(r.total)}</b></div>
+      <div><small>عدد المرات</small><b>${r.count}</b></div><div><small>${isIn ? 'عدد اللي دفعوا' : 'عدد الجهات'}</small><b>${r.by_party.length}</b></div></div>
+    <h2>${isIn ? 'دخلت من مين' : 'خرجت لمين'}</h2>
+    <table class="d"><thead><tr><th>الاسم</th><th>المرات</th><th>المجموع</th></tr></thead>
+    <tbody>${r.by_party.map((x) => `<tr><td><b>${esc(x.party)}</b></td><td>${x.count}</td><td>${m(x.total)}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td>الإجمالي</td><td>${r.count}</td><td>${m(r.total)}</td></tr></tfoot></table>
+    ${r.by_day.length > 1 ? `<h2>مجموع كل يوم</h2><table class="d"><thead><tr><th>اليوم</th><th>المرات</th><th>المجموع</th></tr></thead>
+      <tbody>${r.by_day.map((x) => `<tr><td>${dateLong(x.date)}</td><td>${x.count}</td><td>${m(x.total)}</td></tr>`).join('')}</tbody></table>` : ''}
+    <h2>بالتفصيل</h2>
+    <table class="d"><thead><tr><th>التاريخ</th><th>${isIn ? 'من' : 'لـ'}</th><th>النوع</th><th>البيان</th><th>المبلغ</th></tr></thead>
+    <tbody>${r.movements.map((x) => `<tr><td>${dateT(x.date)} ${x.time}</td><td>${esc(x.party || '')}</td><td>${CASH_CAT[x.category] || x.category}</td>
+      <td>${esc(x.description)}</td><td>${m(x.amount)}</td></tr>`).join('')}</tbody>
+    <tfoot><tr><td colspan="4">الإجمالي</td><td>${m(r.total)}</td></tr></tfoot></table>
+    <div class="sign"><div>المحاسب</div><div>المدير</div><div></div></div></div>`, { size: 'A4', title: isIn ? 'الفلوس اللي دخلت' : 'الفلوس اللي خرجت' });
 }
 
 export function debtsDoc(list, s) {

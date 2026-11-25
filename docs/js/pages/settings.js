@@ -28,6 +28,7 @@ async function shop(app, body) {
     <label class="f">العمولة الافتراضية للموردين الجداد %<input class="in" name="default_commission" type="number" step="0.01" value="${n(s.default_commission)}"></label></div>
     <label class="f">العنوان<input class="in" name="address" value="${esc(s.address)}"></label>
     <label class="f">جملة آخر الإيصال<input class="in" name="receipt_footer" value="${esc(s.receipt_footer)}"></label>
+    <label class="f">العنوان اللي فوق فاتورة المورد<input class="in" name="invoice_title" value="${esc(s.invoice_title || 'محلات عبده العجمي وأولاده (محمد وعبدالرحمن)')}"></label>
     <div><button class="btn primary" id="save">حفظ</button></div></div></div>`;
   body.querySelector('#save').onclick = (e) => busy(e.currentTarget, async () => {
     app.settings = await api.rpc('save_settings', formData(body.querySelector('#sf')));
@@ -152,9 +153,9 @@ const SHEETS = {
   customer_payments: ['التحصيلات', { id: 'رقم', pay_date: 'التاريخ', customer_id: 'رقم الزبون', amount: 'المبلغ', notes: 'ملاحظات', voided: 'ملغية' }],
   crate_returns: ['مرتجع الصناديق', { id: 'رقم', return_date: 'التاريخ', customer_id: 'رقم الزبون', crate_type_id: 'نوع الصندوق', count: 'العدد', amount: 'القيمة', method: 'الطريقة', notes: 'ملاحظات' }],
   suppliers: ['الموردين', { id: 'رقم', name: 'الاسم', phone: 'التليفون', commission_pct: 'العمولة %', notes: 'ملاحظات', active: 'شغال' }],
-  shipments: ['النقلات', { id: 'رقم', supplier_id: 'رقم المورد', ship_date: 'التاريخ', truck: 'العربية', driver: 'السواق', freight: 'النولون', unloading: 'العتالة', other_expenses: 'مصاريف أخرى', settlement_id: 'رقم التصفية', notes: 'ملاحظات' }],
+  shipments: ['النقلات', { id: 'رقم', supplier_id: 'رقم المورد', ship_date: 'التاريخ', truck: 'العربية', driver: 'السواق', freight: 'النولون', unloading: 'الدخان', other_expenses: 'مصاريف أخرى', settlement_id: 'رقم فاتورة المورد', notes: 'ملاحظات' }],
   shipment_items: ['أصناف النقلات', { id: 'id', shipment_id: 'رقم النقلة', item_id: 'رقم الصنف', qty: 'العدد' }],
-  settlements: ['التصفيات', { id: 'id', settle_no: 'رقم التصفية', supplier_id: 'رقم المورد', created_at: 'التاريخ', gross_sales: 'المبيعات', commission_pct: 'العمولة %', commission_amount: 'العمولة', freight: 'النولون', unloading: 'العتالة', other_expenses: 'مصاريف', net_amount: 'الصافي', status: 'الحالة', total_weight: 'الوزن', total_qty: 'العدد' }],
+  settlements: ['فواتير الموردين', { id: 'id', settle_no: 'رقم الفاتورة', supplier_id: 'رقم المورد', created_at: 'التاريخ', gross_sales: 'المبيعات', commission_pct: 'العمولة %', commission_amount: 'العمولة', freight: 'النولون', unloading: 'الدخان', other_expenses: 'مصاريف', net_amount: 'الصافي', status: 'الحالة', total_weight: 'الوزن', total_qty: 'العدد' }],
   cash_movements: ['العهدة', { id: 'رقم', mv_date: 'التاريخ', created_at: 'الوقت', direction: 'وارد/منصرف', amount: 'المبلغ', category: 'النوع', description: 'البيان', party: 'الجهة' }],
   items: ['الأصناف', { id: 'رقم', name: 'الاسم', default_unit: 'الوحدة', active: 'شغال' }],
   crate_types: ['الصناديق', { id: 'رقم', name: 'الاسم', deposit: 'الرهن', active: 'شغال' }],
