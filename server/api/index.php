@@ -1,6 +1,7 @@
 <?php
 // نقطة الدخول الوحيدة للبرنامج: api/?fn=اسم_العملية
 declare(strict_types=1);
+ini_set('display_errors', '0');
 
 header('Content-Type: application/json; charset=utf-8');
 header('X-Content-Type-Options: nosniff');

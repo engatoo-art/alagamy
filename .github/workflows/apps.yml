@@ -3,7 +3,7 @@ name: Build desktop and mobile apps
 on:
   push:
     branches: [main]
-    paths: ['docs/**', 'apps/**', '.github/workflows/apps.yml']
+    paths: ['docs/**', 'apps/**', 'server/**', '.github/workflows/apps.yml']
   workflow_dispatch:
 
 permissions:
@@ -109,15 +109,23 @@ jobs:
       - name: Full package (كل ملفات البرنامج في ملف واحد)
         run: |
           mkdir -p pkg/Alagamy && cd pkg/Alagamy
-          cp -r ../../src/supabase ../../src/apps ../../src/dev ../../src/README.md ../../src/README-AR.md .
+          cp -r ../../src/supabase ../../src/server ../../src/apps ../../src/dev ../../src/README.md ../../src/README-AR.md .
           cp -r ../../dl/site site
           mkdir -p programs && cp ../../dl/windows/*.exe ../../dl/android/*.apk programs/
           cd .. && zip -qr ../Alagamy-full.zip Alagamy && cd .. && ls -la Alagamy-full.zip
+      - name: Hosting package (نسخة الاستضافة جاهزة للرفع على cPanel)
+        run: |
+          mkdir -p host && cp -r dl/site/. host/ && cp -r src/server/api host/api
+          rm -f host/api/config.php
+          printf "// نسخة الاستضافة: البرنامج بيكلم api/ على نفس الموقع\nexport const CONFIG = { BACKEND: 'php', API_URL: 'api/' };\n" > host/js/config.js
+          cp src/server/htaccess-root.txt host/.htaccess
+          cp src/server/README-hosting.md host/README-hosting.md
+          cd host && zip -qr ../Alagamy-hosting.zip . && cd .. && ls -la Alagamy-hosting.zip
       - name: Publish download links
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete latest -y --cleanup-tag -R ${{ github.repository }} || true
-          gh release create latest dl/windows/AlagamySetup.exe dl/windows/Alagamy.exe dl/android/Alagamy.apk Alagamy-full.zip -R ${{ github.repository }} \
+          gh release create latest dl/windows/AlagamySetup.exe dl/windows/Alagamy.exe dl/android/Alagamy.apk Alagamy-full.zip Alagamy-hosting.zip -R ${{ github.repository }} \
             --title "العجمي — آخر نسخة" \
-            --notes "برنامج التسطيب للويندوز (AlagamySetup.exe)، ونسخة بتشتغل من غير تسطيب (Alagamy.exe)، وتطبيق الأندرويد (Alagamy.apk)، وكل ملفات البرنامج في ملف واحد (Alagamy-full.zip)."
+            --notes "برنامج التسطيب للويندوز (AlagamySetup.exe)، ونسخة بتشتغل من غير تسطيب (Alagamy.exe)، وتطبيق الأندرويد (Alagamy.apk)، وكل ملفات البرنامج في ملف واحد (Alagamy-full.zip)، ونسخة الاستضافة جاهزة للرفع على cPanel (Alagamy-hosting.zip)."

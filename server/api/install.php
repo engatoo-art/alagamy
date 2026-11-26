@@ -1,6 +1,7 @@
 <?php
 // برنامج تسطيب العجمي على الاستضافة — بيشتغل مرة واحدة وبعدها بيقفل نفسه
 declare(strict_types=1);
+ini_set('display_errors', '0');
 require __DIR__ . '/lib/core.php';
 require __DIR__ . '/lib/import.php';
 $FN = [];
@@ -27,6 +28,10 @@ if (file_exists($lock)) {
       'db_pass' => (string)($_POST['db_pass'] ?? ''),
     ];
     if ($cfg['db_name'] === '' || $cfg['db_user'] === '') throw new AppError('اكتب اسم قاعدة البيانات واسم المستخدم بتاعها');
+    // قاعدة البيانات لازم تكون على نفس الاستضافة (أمان: محدش يقدر يوصّل الموقع بقاعدة بيانات بره)
+    if (!in_array(strtolower($cfg['db_host']), ['localhost', '127.0.0.1', '::1'], true) && !getenv('ALAGAMY_ALLOW_REMOTE_DB')) {
+      throw new AppError('السيرفر لازم يكون localhost (قاعدة البيانات على نفس الاستضافة)');
+    }
     $adminU = _check_username((string)($_POST['admin_user'] ?? ''));
     $adminP = (string)($_POST['admin_pass'] ?? '');
     _check_password($adminP);
