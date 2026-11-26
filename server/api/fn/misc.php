@@ -88,7 +88,8 @@ function _shift_detail(?int $id): array {
   $sales = q("SELECT s.id, s.sale_no, DATE_FORMAT(s.created_at, '%H:%i') AS time, COALESCE(c.name, NULLIF(s.customer_name, ''), 'زبون نقدي') AS customer,
       s.payment_type, s.goods_total AS goods, s.deposit_total AS deposit, s.discount, s.grand_total AS total, s.paid_amount AS paid,
       s.voided, s.approval_status AS approval
-    FROM sales s LEFT JOIN customers c ON c.id = s.customer_id WHERE s.$w ORDER BY s.created_at, s.id", $args);
+    FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
+    WHERE s.created_by = ? AND s.created_at BETWEEN ? AND ? ORDER BY s.created_at, s.id", $args);
   foreach ($sales as &$s) $s['lines'] = _sale_lines_json((int)$s['id']);
   $tot = q1("SELECT COUNT(*) count, COALESCE(SUM(goods_total), 0) goods, COALESCE(SUM(deposit_total), 0) deposit, COALESCE(SUM(grand_total), 0) total,
       COALESCE(SUM(paid_amount), 0) cash, COALESCE(SUM(grand_total - paid_amount), 0) credit FROM sales WHERE $w AND NOT voided", $args);

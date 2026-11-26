@@ -51,18 +51,18 @@ jobs:
 
       - name: 2) نسخة الاستضافة (PHP + MySQL) — نفس الاختبارات بالظبط
         run: |
-          mysql -h127.0.0.1 -uroot -proot -e "select version()"
+          mysql --default-character-set=utf8mb4 -h127.0.0.1 -uroot -proot -e "select version()"
           cp -r server /tmp/srv1
           printf "<?php return ['db_host'=>'127.0.0.1','db_port'=>3306,'db_name'=>'app','db_user'=>'root','db_pass'=>'root'];\n" > /tmp/srv1/api/config.php
-          mysql -h127.0.0.1 -uroot -proot app < server/api/lib/schema.sql
-          mysql -h127.0.0.1 -uroot -proot app -e "insert into crate_types(name, deposit) values ('صندوق بلاستيك كبير', 50), ('صندوق بلاستيك صغير', 30), ('صندوق خشب (بدون رهن)', 0)"
+          mysql --default-character-set=utf8mb4 -h127.0.0.1 -uroot -proot app < server/api/lib/schema.sql
+          mysql --default-character-set=utf8mb4 -h127.0.0.1 -uroot -proot app -e "insert into crate_types(name, deposit) values ('صندوق بلاستيك كبير', 50), ('صندوق بلاستيك صغير', 30), ('صندوق خشب (بدون رهن)', 0)"
           ALAGAMY_DEBUG=1 php -S 127.0.0.1:8099 -t /tmp/srv1 > /tmp/php1.log 2>&1 &
           sleep 2
           BACKEND=php MYSQL_DB=app python3 dev/test_flows.py
 
       - name: 3) برنامج التسطيب + نقل البيانات من Supabase + مقارنة كل الأرقام
         run: |
-          mysql -h127.0.0.1 -uroot -proot -e "create database app2 character set utf8mb4 collate utf8mb4_unicode_ci"
+          mysql --default-character-set=utf8mb4 -h127.0.0.1 -uroot -proot -e "create database app2 character set utf8mb4 collate utf8mb4_unicode_ci"
           cp -r server /tmp/srv2
           ALAGAMY_DEBUG=1 php -S 127.0.0.1:8098 -t /tmp/srv2 > /tmp/php2.log 2>&1 &
           sleep 2

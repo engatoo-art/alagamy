@@ -10,7 +10,7 @@ TOKENS, PASSWORDS = {}, {}
 
 def mysql(q):
     r = subprocess.run(["mysql", "-h", os.environ.get("MYSQL_HOST", "127.0.0.1"), "-u", os.environ.get("MYSQL_USER", "root"),
-                        "-p" + os.environ.get("MYSQL_PASS", "root"), os.environ.get("MYSQL_DB", "app"), "-N", "-B", "-e", q],
+                        "-p" + os.environ.get("MYSQL_PASS", "root"), "--default-character-set=utf8mb4", os.environ.get("MYSQL_DB", "app"), "-N", "-B", "-e", q],
                        capture_output=True, text=True)
     if r.returncode != 0:
         raise RuntimeError(r.stderr.strip())
