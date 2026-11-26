@@ -37,7 +37,7 @@ expect_error(acc, "save_settings", {"shop_name": "x"}, "صلاحية")
 expect_error(admin, "save_user", {"id": admin, "role": "accountant"}, "مينفعش")
 call(admin, "save_user", {"id": acc, "perms": {**perms, "users": True}})
 expect_error(acc, "save_user", {"id": acc, "role": "admin"}, "للمدير بس")
-expect_error(acc, "create_invite", {"username": "x123"}, "للمدير بس")
+expect_error(acc, "create_user" if PHP else "create_invite", {"username": "x123", "password": "12345678"}, "للمدير بس")
 call(admin, "save_user", {"id": acc, "perms": perms})
 ok("محاسب معاه صلاحية المستخدمين مايقدرش يخلي نفسه مدير")
 
