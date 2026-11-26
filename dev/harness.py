@@ -9,11 +9,10 @@ PHP_URL = os.environ.get("PHP_URL", "http://127.0.0.1:8099/api/")
 TOKENS, PASSWORDS = {}, {}
 
 def mysql(q):
-    r = subprocess.run(["mysql", "-h", os.environ.get("MYSQL_HOST", "127.0.0.1"), "-u", os.environ.get("MYSQL_USER", "root"),
-                        "-p" + os.environ.get("MYSQL_PASS", "root"), "--default-character-set=utf8mb4", os.environ.get("MYSQL_DB", "app"), "-N", "-B", "-e", q],
-                       capture_output=True, text=True)
+    # بنفس طريقة البرنامج (PDO + utf8mb4) علشان العربي يتقري صح على كل نسخ MySQL
+    r = subprocess.run(["php", os.path.join(os.path.dirname(os.path.abspath(__file__)), "mysql.php"), q], capture_output=True, text=True)
     if r.returncode != 0:
-        raise RuntimeError(r.stderr.strip())
+        raise RuntimeError((r.stderr or r.stdout).strip())
     return r.stdout.strip()
 
 def http(fn, body, token=None):
