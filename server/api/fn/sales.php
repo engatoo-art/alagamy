@@ -141,7 +141,7 @@ $FN['void_sale'] = function (array $p) {
   if (!$s) fail('الفاتورة غير موجودة');
   if ($s['voided']) fail('الفاتورة ملغية بالفعل');
   if (_sale_in_settled((int)$s['id'])) fail('مينفعش تلغي الفاتورة دي لأن النقلة بتاعتها اتعملها تصفية');
-  ex('UPDATE sales SET voided = 1, voided_by = ?, voided_at = NOW(), void_reason = ? WHERE id = ?', [uid(), _t($p, 'reason'), $s['id']]);
+  ex('UPDATE sales SET voided = 1, voided_by = ?, voided_at = NOW(6), void_reason = ? WHERE id = ?', [uid(), _t($p, 'reason'), $s['id']]);
   _cash('out', $s['paid_amount'], 'sale_void', 'إلغاء فاتورة رقم ' . $s['sale_no'], '', 'sale', (int)$s['id']);
   return ['ok' => true];
 };
@@ -186,11 +186,11 @@ $FN['decide_sale'] = function (array $p) {
   if (!$s) fail('الفاتورة غير موجودة');
   if ($s['approval_status'] !== 'pending' || $s['voided']) fail('الفاتورة دي اتراجعت قبل كده');
   if ($ok) {
-    ex("UPDATE sales SET approval_status = 'approved', decided_by = ?, decided_at = NOW() WHERE id = ?", [uid(), $s['id']]);
+    ex("UPDATE sales SET approval_status = 'approved', decided_by = ?, decided_at = NOW(6) WHERE id = ?", [uid(), $s['id']]);
   } else {
     $r = _t($p, 'reason');
-    ex("UPDATE sales SET approval_status = 'rejected', decided_by = ?, decided_at = NOW(), reject_reason = ?, voided = 1, voided_by = ?,
-          voided_at = NOW(), void_reason = ? WHERE id = ?", [uid(), $r, uid(), 'رفض الآجل' . ($r !== '' ? ' — ' . $r : ''), $s['id']]);
+    ex("UPDATE sales SET approval_status = 'rejected', decided_by = ?, decided_at = NOW(6), reject_reason = ?, voided = 1, voided_by = ?,
+          voided_at = NOW(6), void_reason = ? WHERE id = ?", [uid(), $r, uid(), 'رفض الآجل' . ($r !== '' ? ' — ' . $r : ''), $s['id']]);
     _cash('out', $s['paid_amount'], 'sale_void', 'رفض آجل فاتورة رقم ' . $s['sale_no'], '', 'sale', (int)$s['id']);
   }
   return ['ok' => true];

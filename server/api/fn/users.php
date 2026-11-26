@@ -20,11 +20,11 @@ $FN['app_bootstrap'] = function (array $p) {
 };
 
 function _purge_deleted(): void {
-  $rows = q("SELECT * FROM profiles WHERE deleted_at IS NOT NULL AND purged_at IS NULL AND deleted_at < NOW() - INTERVAL 7 DAY");
+  $rows = q("SELECT * FROM profiles WHERE deleted_at IS NOT NULL AND purged_at IS NULL AND deleted_at < NOW(6) - INTERVAL 7 DAY");
   foreach ($rows as $r) {
     ex('DELETE FROM sessions WHERE user_id = ?', [$r['id']]);
     // اسم الدخول بيتحرر علشان ينفع يتعمل بيه حساب جديد، والاسم الحقيقي بيفضل في الفواتير القديمة
-    ex("UPDATE profiles SET purged_at = NOW(), active = 0, perms = '{}', password_hash = '',
+    ex("UPDATE profiles SET purged_at = NOW(6), active = 0, perms = '{}', password_hash = '',
           full_name = IF(full_name = '', username, full_name), username = ? WHERE id = ?",
       ['deleted-' . substr(str_replace('-', '', $r['id']), 0, 10), $r['id']]);
   }
@@ -96,7 +96,7 @@ $FN['delete_user'] = function (array $p) {
   if (qv("SELECT 1 FROM cash_shifts WHERE user_id = ? AND status = 'open'", [$id])) {
     fail('المحاسب ده عهدته مفتوحة — اقفلها الأول من صفحة العهدة وبعدين احذفه');
   }
-  ex('UPDATE profiles SET was_active = active, active = 0, deleted_at = NOW(), deleted_by = ? WHERE id = ?', [uid(), $id]);
+  ex('UPDATE profiles SET was_active = active, active = 0, deleted_at = NOW(6), deleted_by = ? WHERE id = ?', [uid(), $id]);
   ex('DELETE FROM sessions WHERE user_id = ?', [$id]);
   return ['ok' => true, 'restore_until' => iso_ts(date('Y-m-d H:i:s', time() + 7 * 86400))];
 };
@@ -140,7 +140,7 @@ $FN['save_user'] = function (array $p) {
 $FN['save_settings'] = function (array $p) {
   _need('settings');
   $s = q1('SELECT * FROM shop_settings WHERE id = 1');
-  ex('UPDATE shop_settings SET shop_name = ?, phone = ?, address = ?, default_commission = ?, receipt_footer = ?, invoice_title = ?, updated_at = NOW() WHERE id = 1', [
+  ex('UPDATE shop_settings SET shop_name = ?, phone = ?, address = ?, default_commission = ?, receipt_footer = ?, invoice_title = ?, updated_at = NOW(6) WHERE id = 1', [
     _t($p, 'shop_name') !== '' ? _t($p, 'shop_name') : $s['shop_name'],
     has_key($p, 'phone') ? (string)$p['phone'] : $s['phone'],
     has_key($p, 'address') ? (string)$p['address'] : $s['address'],

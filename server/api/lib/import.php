@@ -19,7 +19,7 @@ function import_value($v, string $type) {
     if ($v === '') return null;
     $d = new DateTime((string)$v);
     $d->setTimezone(new DateTimeZone('Africa/Cairo'));
-    return $d->format('Y-m-d H:i:s');
+    return $d->format('Y-m-d H:i:s.u');
   }
   if (str_starts_with($type, 'date')) return substr((string)$v, 0, 10);
   if (str_starts_with($type, 'tinyint')) return $v ? 1 : 0;

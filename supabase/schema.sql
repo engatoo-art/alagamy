@@ -1328,7 +1328,7 @@ begin
         'id', c.id, 'name', c.name, 'phone', c.phone, 'balance', _customer_balance(c.id)) order by c.id), '[]')
       from customers c where c.credit_requested and not c.credit_approved),
     'users', (select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'username', u.username, 'full_name', u.full_name)
-        order by u.created_at), '[]') from profiles u where not u.active and _has('users')),
+        order by u.created_at), '[]') from profiles u where not u.active and u.deleted_at is null and u.purged_at is null and _has('users')),
     'requests', (select coalesce(jsonb_agg(to_jsonb(r) || jsonb_build_object('by', _uname(r.requested_by)) order by r.id), '[]')
       from change_requests r where r.status = 'pending')
   );
@@ -2050,7 +2050,7 @@ begin
         (select count(*) from sales where approval_status = 'pending' and not voided)
       + (select count(*) from settlements where status = 'pending')
       + (select count(*) from customers where credit_requested and not credit_approved)
-      + (select count(*) from profiles where not active and _has('users'))
+      + (select count(*) from profiles where not active and deleted_at is null and purged_at is null and _has('users'))
       + (select count(*) from change_requests where status = 'pending') else 0 end,
     'to_pay', (select coalesce(sum(net_amount), 0) from settlements where status = 'approved'),
     'week', (select coalesce(jsonb_agg(jsonb_build_object('date', g.d, 'total',

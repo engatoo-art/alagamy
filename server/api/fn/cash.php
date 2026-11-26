@@ -131,7 +131,7 @@ $FN['close_shift'] = function (array $p) {
     ins("INSERT INTO cash_movements(mv_date, direction, amount, category, description, ref_type, ref_id, created_by, shift_id) VALUES (?,'in',?,'shift_over',?,'shift',?,?,?)",
       [today(), $diff, 'زيادة في عهدة ' . _uname($sh['user_id']), $sh['id'], uid(), $sh['id']]);
   }
-  ex("UPDATE cash_shifts SET status = 'closed', closed_at = NOW(), closed_by = ?, total_in = ?, total_out = ?, expected_amount = ?,
+  ex("UPDATE cash_shifts SET status = 'closed', closed_at = NOW(6), closed_by = ?, total_in = ?, total_out = ?, expected_amount = ?,
         counted_amount = ?, difference = ?, notes = IF(? <> '', ?, notes) WHERE id = ?",
     [uid(), $t['tin'], $t['tout'], $expected, $counted, $diff, _t($p, 'notes'), _t($p, 'notes'), $sh['id']]);
   return _shift_report((int)$sh['id']);

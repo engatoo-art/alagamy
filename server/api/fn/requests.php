@@ -71,7 +71,7 @@ $FN['decide_change'] = function (array $p) {
       }
     } finally { $GLOBALS['APPROVED_RUN'] = false; }
   }
-  ex('UPDATE change_requests SET status = ?, decided_by = ?, decided_at = NOW(), decide_note = ? WHERE id = ?',
+  ex('UPDATE change_requests SET status = ?, decided_by = ?, decided_at = NOW(6), decide_note = ? WHERE id = ?',
     [$ok ? 'approved' : 'rejected', uid(), _t($p, 'note'), $r['id']]);
   return ['ok' => true];
 };

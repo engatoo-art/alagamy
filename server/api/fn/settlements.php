@@ -93,9 +93,9 @@ $FN['decide_settlement'] = function (array $p) {
   if (!$s) fail('التصفية غير موجودة');
   if ($s['status'] !== 'pending') fail('التصفية دي اتراجعت قبل كده');
   if (_b($p, 'approve') ?? false) {
-    ex("UPDATE settlements SET status = 'approved', decided_by = ?, decided_at = NOW() WHERE id = ?", [uid(), $s['id']]);
+    ex("UPDATE settlements SET status = 'approved', decided_by = ?, decided_at = NOW(6) WHERE id = ?", [uid(), $s['id']]);
   } else {
-    ex("UPDATE settlements SET status = 'rejected', decided_by = ?, decided_at = NOW(), reject_reason = ? WHERE id = ?", [uid(), _t($p, 'reason'), $s['id']]);
+    ex("UPDATE settlements SET status = 'rejected', decided_by = ?, decided_at = NOW(6), reject_reason = ? WHERE id = ?", [uid(), _t($p, 'reason'), $s['id']]);
     ex('UPDATE shipments SET settlement_id = NULL WHERE settlement_id = ?', [$s['id']]);
   }
   return _get_settlement((int)$s['id']);
@@ -109,7 +109,7 @@ $FN['pay_settlement'] = function (array $p) {
   if ($s['status'] === 'pending') fail('التصفية لسه مستنية موافقة المدير');
   if ($s['status'] !== 'approved') fail('التصفية دي مش جاهزة للصرف');
   $sup = qv('SELECT name FROM suppliers WHERE id = ?', [$s['supplier_id']]);
-  ex("UPDATE settlements SET status = 'paid', paid_by = ?, paid_at = NOW() WHERE id = ?", [uid(), $s['id']]);
+  ex("UPDATE settlements SET status = 'paid', paid_by = ?, paid_at = NOW(6) WHERE id = ?", [uid(), $s['id']]);
   $pay = r2($s['net_amount'] - $s['advance_deducted']);
   if ($pay > 0) {
     _cash('out', $pay, 'supplier_payment', 'صرف فاتورة رقم ' . $s['settle_no'] . ' — ' . $sup .

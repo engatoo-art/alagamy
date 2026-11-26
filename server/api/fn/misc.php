@@ -82,7 +82,7 @@ function _shift_detail(?int $id): array {
   if (!$sh) fail('العهدة غير موجودة');
   if ($sh['user_id'] !== uid() && !_has('approve') && !_has('reports') && !_has('cash')) fail('مش عندك صلاحية تشوف عهدة محاسب تاني');
   // الأوقات في قاعدة البيانات بتوقيت القاهرة؛ بنقارن بالقيم الخام
-  $raw = q1("SELECT DATE_FORMAT(opened_at, '%Y-%m-%d %H:%i:%s') o, DATE_FORMAT(COALESCE(closed_at, NOW()), '%Y-%m-%d %H:%i:%s') c FROM cash_shifts WHERE id = ?", [$id]);
+  $raw = q1("SELECT DATE_FORMAT(opened_at, '%Y-%m-%d %H:%i:%s') o, DATE_FORMAT(COALESCE(closed_at, NOW(6)), '%Y-%m-%d %H:%i:%s') c FROM cash_shifts WHERE id = ?", [$id]);
   $w = 'created_by = ? AND created_at BETWEEN ? AND ?';
   $args = [$sh['user_id'], $raw['o'], $raw['c']];
   $sales = q("SELECT s.id, s.sale_no, DATE_FORMAT(s.created_at, '%H:%i') AS time, COALESCE(c.name, NULLIF(s.customer_name, ''), 'زبون نقدي') AS customer,
@@ -103,7 +103,7 @@ $FN['shift_detail'] = function (array $p) { _need(null); return _shift_detail(_i
 
 $FN['review_shift'] = function (array $p) {
   _need('approve');
-  $n = ex("UPDATE cash_shifts SET reviewed_by = ?, reviewed_at = NOW(), review_note = ? WHERE id = ? AND status = 'closed'", [uid(), _t($p, 'note'), _i($p, 'id')]);
+  $n = ex("UPDATE cash_shifts SET reviewed_by = ?, reviewed_at = NOW(6), review_note = ? WHERE id = ? AND status = 'closed'", [uid(), _t($p, 'note'), _i($p, 'id')]);
   if ($n === 0 && !qv("SELECT 1 FROM cash_shifts WHERE id = ? AND status = 'closed'", [_i($p, 'id')])) fail('العهدة لازم تكون مقفولة الأول');
   return _shift_detail(_i($p, 'id'));
 };

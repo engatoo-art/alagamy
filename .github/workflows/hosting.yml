@@ -56,6 +56,8 @@ jobs:
           printf "<?php return ['db_host'=>'127.0.0.1','db_port'=>3306,'db_name'=>'app','db_user'=>'root','db_pass'=>'root'];\n" > /tmp/srv1/api/config.php
           mysql --default-character-set=utf8mb4 -h127.0.0.1 -uroot -proot app < server/api/lib/schema.sql
           mysql --default-character-set=utf8mb4 -h127.0.0.1 -uroot -proot app -e "insert into crate_types(name, deposit) values ('صندوق بلاستيك كبير', 50), ('صندوق بلاستيك صغير', 30), ('صندوق خشب (بدون رهن)', 0)"
+          mysql --default-character-set=utf8mb4 -h127.0.0.1 -uroot -proot app -e "select id, name, hex(name), @@character_set_server, @@collation_database from crate_types"
+          php -r '$p=new PDO("mysql:host=127.0.0.1;dbname=app;charset=utf8mb4","root","root"); echo json_encode($p->query("select name from crate_types")->fetchAll(PDO::FETCH_COLUMN), JSON_UNESCAPED_UNICODE), "\n";'
           ALAGAMY_DEBUG=1 php -S 127.0.0.1:8099 -t /tmp/srv1 > /tmp/php1.log 2>&1 &
           sleep 2
           BACKEND=php MYSQL_DB=app python3 dev/test_flows.py
