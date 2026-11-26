@@ -2135,7 +2135,7 @@ begin
   return jsonb_build_object(
     'exported_at', now(),
     'shop_settings', (select coalesce(jsonb_agg(to_jsonb(x)), '[]') from shop_settings x),
-    'users', (select coalesce(jsonb_agg(to_jsonb(x) - 'perms'), '[]') from profiles x),
+    'users', (select coalesce(jsonb_agg(to_jsonb(x)), '[]') from profiles x),
     'crate_types', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from crate_types x),
     'items', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from items x),
     'customers', (select coalesce(jsonb_agg(to_jsonb(x) || jsonb_build_object('balance', _customer_balance(x.id)) order by id), '[]') from customers x),
@@ -2146,7 +2146,7 @@ begin
     'sale_lines', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from sale_lines x),
     'customer_payments', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from customer_payments x),
     'crate_returns', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from crate_returns x),
-    'settlements', (select coalesce(jsonb_agg(to_jsonb(x) - 'details' order by id), '[]') from settlements x),
+    'settlements', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from settlements x),
     'cash_movements', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from cash_movements x),
     'supplier_advances', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from supplier_advances x),
     'change_requests', (select coalesce(jsonb_agg(to_jsonb(x) order by id), '[]') from change_requests x),

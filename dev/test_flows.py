@@ -1,40 +1,9 @@
-"""اختبار سيناريوهات البرنامج على قاعدة بيانات محلية"""
-import json, subprocess, sys
-
-ENV = {"PGHOST": "/tmp", "PGPORT": "5544", "PGUSER": "postgres", "PATH": "/usr/bin:/bin"}
-
-def sql(q):
-    r = subprocess.run(["psql", "-d", "app", "-At", "-v", "ON_ERROR_STOP=1", "-c", q], capture_output=True, text=True, env=ENV)
-    if r.returncode != 0:
-        raise RuntimeError(r.stderr.strip())
-    return r.stdout.strip()
-
-def call(uid, fn, p=None):
-    body = json.dumps(p or {}, ensure_ascii=False).replace("$J$", "")
-    q = (f"begin; set local role authenticated; select set_config('request.jwt.claim.sub', '{uid}', true); "
-         f"select public.{fn}($J${body}$J$::jsonb); commit;")
-    r = subprocess.run(["psql", "-d", "app", "-At", "-v", "ON_ERROR_STOP=1"], input=q, capture_output=True, text=True, env=ENV)
-    if r.returncode != 0:
-        err = r.stderr.strip().splitlines()
-        raise RuntimeError(next((l for l in err if "ERROR" in l), r.stderr.strip()))
-    lines = [l for l in r.stdout.strip().splitlines() if l not in ("BEGIN", "COMMIT", "SET", "")]
-    return json.loads(lines[-1])
-
-def expect_error(uid, fn, p, contains):
-    try:
-        call(uid, fn, p)
-    except RuntimeError as e:
-        assert contains in str(e), f"wrong error: {e}"
-        print(f"  ✔ رفض متوقع: {contains}")
-        return
-    raise AssertionError(f"{fn} should have failed with {contains}")
-
-def new_user(username, full, inviter=None, invite=None):
-    if inviter:
-        invite = call(inviter, "create_invite", {"username": username})["invite"]
-    inv = f',"invite":"{invite}"' if invite else ""
-    return sql(f"""insert into auth.users(email, raw_user_meta_data) values ('{username}@alagamy.app',
-                '{{"username":"{username}","full_name":"{full}"{inv}}}') returning id""").splitlines()[0]
+"""اختبار سيناريوهات البرنامج على قاعدة بيانات محلية
+   BACKEND=pg  (الافتراضي): Supabase/PostgreSQL المحلي
+   BACKEND=php: نسخة الاستضافة (PHP + MySQL) — السيرفر على PHP_URL وقاعدة البيانات MYSQL_* """
+import os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from harness import *  # noqa
 
 ok = lambda m: print("✔", m)
 
@@ -176,10 +145,19 @@ ok("النسخة الاحتياطية بتطلع كل الجداول")
 expect_error(acc, "export_all", {}, "صلاحية")
 
 # حماية الجداول من الوصول المباشر
-try:
+if PHP:
+    for tok in [None, "0" * 64]:
+        try:
+            http("list_sales", {"p": {}}, tok)
+            raise AssertionError("call without login should be denied")
+        except RuntimeError as e:
+            assert "سجّل دخول" in str(e), e
+    print("  ✔ مفيش أي عملية من غير دخول")
+else:
+  try:
     sql("begin; set local role authenticated; select * from public.sales; commit;")
     raise AssertionError("direct table access should be denied")
-except RuntimeError as e:
+  except RuntimeError as e:
     assert "permission denied" in str(e)
     print("  ✔ الجداول مقفولة قدام الوصول المباشر")
 
@@ -260,7 +238,8 @@ ok(f"التقارير المفصلة: {len(rd['lines'])} سطر بيع، {ro['co
 z = call(admin, "report_zimam", {})
 amana = [x for x in z if x["name"] == "محل الأمانة"][0]
 assert float(amana["balance"]) > 0 and amana["purchases"] >= 1 and amana["oldest_unpaid"]
-sql("update sales set sale_date = sale_date - 10 where customer_id = %d" % cust["id"])
+sql(("update sales set sale_date = date_sub(sale_date, interval 10 day) where customer_id = %d" if PHP else
+     "update sales set sale_date = sale_date - 10 where customer_id = %d") % cust["id"])
 z10 = call(admin, "report_zimam", {"min_days": 7})
 assert any(x["name"] == "محل الأمانة" and x["days_late"] >= 10 for x in z10)
 assert call(admin, "report_zimam", {"min_days": 30}) == [] or all(x["days_late"] >= 30 for x in call(admin, "report_zimam", {"min_days": 30}))
@@ -341,7 +320,8 @@ assert users["temp1"]["deleted_at"] and users["temp1"]["days_left"] == 7, users[
 call(admin, "restore_user", {"id": tmp})
 call(tmp, "current_shift")
 call(admin, "delete_user", {"id": tmp})
-sql(f"update profiles set deleted_at = now() - interval '8 days' where id = '{tmp}'")
+sql(f"update profiles set deleted_at = now() - interval 8 day where id = '{tmp}'" if PHP else
+    f"update profiles set deleted_at = now() - interval '8 days' where id = '{tmp}'")
 assert "temp1" not in {u["username"] for u in call(admin, "list_users")}
 expect_error(admin, "restore_user", {"id": tmp}, "نهائي")
 assert sql(f"select full_name from profiles where id = '{tmp}'") == "محاسب مؤقت"
@@ -353,15 +333,32 @@ expect_error(admin, "save_user", {"id": acc, "email": "ahmed-at-gmail"}, "الإ
 expect_error(admin, "save_user", {"id": acc, "phone": "012"}, "رقم")
 u = call(admin, "save_user", {"id": acc, "email": " Ahmed@Gmail.com ", "phone": "0101 234 5678", "whatsapp": "+20 101 234 5678"})
 assert u["email"] == "ahmed@gmail.com" and u["phone"] == "01012345678" and u["whatsapp"] == "+201012345678", u
-sql(f"update auth.users set encrypted_password = extensions.crypt('old-pass-1', extensions.gen_salt('bf')) where id = '{acc}'")
-sql(f"insert into auth.sessions(user_id) values ('{acc}')")
+if not PHP:
+    sql(f"update auth.users set encrypted_password = extensions.crypt('old-pass-1', extensions.gen_salt('bf')) where id = '{acc}'")
+    sql(f"insert into auth.sessions(user_id) values ('{acc}')")
+else:
+    call(acc, "app_bootstrap")
+    old_token = TOKENS[acc]
 expect_error(acc, "admin_set_password", {"id": mate, "password": "12345678"}, "للمدير بس")
 expect_error(admin, "admin_set_password", {"id": admin, "password": "12345678"}, "حسابي")
 expect_error(admin, "admin_set_password", {"id": acc, "password": "123"}, "8 حروف")
 call(admin, "admin_set_password", {"id": acc, "password": "new-pass-2026"})
-assert sql(f"select encrypted_password = extensions.crypt('new-pass-2026', encrypted_password) from auth.users where id = '{acc}'") == "t"
-assert sql(f"select encrypted_password like '$2a$%' from auth.users where id = '{acc}'") == "t"
-assert sql(f"select count(*) from auth.sessions where user_id = '{acc}'") == "0"
+if PHP:
+    assert sql(f"select count(*) from sessions where user_id = '{acc}'") == "0"
+    try:
+        http("app_bootstrap", {"p": {}}, old_token); raise AssertionError("old session should be gone")
+    except RuntimeError as e:
+        assert "سجّل دخول" in str(e)
+    try:
+        http("login", {"username": "ahmed", "password": PASSWORDS[acc][1]}); raise AssertionError("old password should fail")
+    except RuntimeError as e:
+        assert "غلط" in str(e)
+    assert http("login", {"username": "ahmed", "password": "new-pass-2026"})["token"]
+    assert sql(f"select password_hash like '$2y$%' from profiles where id = '{acc}'") == "1"
+else:
+    assert sql(f"select encrypted_password = extensions.crypt('new-pass-2026', encrypted_password) from auth.users where id = '{acc}'") == "t"
+    assert sql(f"select encrypted_password like '$2a$%' from auth.users where id = '{acc}'") == "t"
+    assert sql(f"select count(*) from auth.sessions where user_id = '{acc}'") == "0"
 ok("بيانات التواصل بتتحفظ مظبوطة، والمدير بيغيّر كلمة السر (bcrypt) وبيخرّج المحاسب من كل الأجهزة")
 
 print("\nكل الاختبارات نجحت ✔")

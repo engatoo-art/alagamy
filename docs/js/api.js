@@ -1,7 +1,27 @@
 import { CONFIG } from './config.js';
 
+// نسخة الاستضافة (PHP + MySQL): البرنامج بيكلم api/ على نفس الموقع
+const PHP = CONFIG.BACKEND === 'php';
 // وضع التجربة المحلية: لو مفيش بيانات Supabase بنكلم سيرفر التجربة
-const DEV = !CONFIG.SUPABASE_URL;
+const DEV = !PHP && !CONFIG.SUPABASE_URL;
+const TOKEN_KEY = 'alagamy_token';
+
+async function phpPost(fn, body, auth = true) {
+  const headers = { 'Content-Type': 'application/json' };
+  const tok = localStorage.getItem(TOKEN_KEY);
+  if (auth && tok) { headers.Authorization = 'Bearer ' + tok; headers['X-Auth-Token'] = tok; }
+  let r;
+  try {
+    r = await fetch((CONFIG.API_URL || 'api/') + '?fn=' + fn, { method: 'POST', headers, body: JSON.stringify(body || {}), cache: 'no-store' });
+  } catch { throw new Error('مفيش اتصال بالإنترنت أو السيرفر مش بيرد'); }
+  let j = null;
+  try { j = await r.json(); } catch { /* رد مش JSON */ }
+  if (!r.ok || !j) {
+    if (r.status === 401 && j?.code === 'auth') localStorage.removeItem(TOKEN_KEY);
+    throw new Error(j?.error || 'السيرفر مش بيرد صح (' + r.status + ')');
+  }
+  return j.data;
+}
 let sb = null;
 let lib = null;
 
@@ -50,8 +70,10 @@ async function devPost(path, body) {
 
 export const api = {
   dev: DEV,
+  php: PHP,
 
   async session() {
+    if (PHP) return localStorage.getItem(TOKEN_KEY) ? { user: {} } : null;
     if (DEV) return localStorage.getItem('dev_uid') ? { user: { id: localStorage.getItem('dev_uid') } } : null;
     const c = await client();
     const { data } = await c.auth.getSession();
@@ -60,6 +82,11 @@ export const api = {
 
   async login(username, password) {
     if (!username || !password) throw new Error('اكتب اسم المستخدم وكلمة المرور');
+    if (PHP) {
+      const d = await phpPost('login', { username: username.trim().toLowerCase(), password }, false);
+      localStorage.setItem(TOKEN_KEY, d.token);
+      return;
+    }
     if (DEV) {
       const j = await devPost('/dev/login', { username: username.trim().toLowerCase() });
       localStorage.setItem('dev_uid', j.uid);
@@ -73,6 +100,12 @@ export const api = {
   async register(username, password, fullName) {
     if (!/^[a-zA-Z0-9_.]{3,30}$/.test(username.trim())) {
       throw new Error('اسم المستخدم لازم يكون بالإنجليزي (حروف وأرقام) ومن 3 حروف على الأقل');
+    }
+    if (PHP) {
+      if ((password || '').length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل');
+      const d = await phpPost('setup', { username: username.trim().toLowerCase(), password, full_name: fullName }, false);
+      localStorage.setItem(TOKEN_KEY, d.token);
+      return;
     }
     if (DEV) {
       const j = await devPost('/dev/register', { username: username.trim().toLowerCase(), full_name: fullName });
@@ -96,6 +129,7 @@ export const api = {
       throw new Error('اسم المستخدم لازم يكون بالإنجليزي (حروف وأرقام) ومن 3 حروف على الأقل');
     }
     if ((password || '').length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل');
+    if (PHP) return (await this.rpc('create_user', { username, password, full_name: fullName })).id;
     // دعوة لمرة واحدة من المدير — من غيرها قاعدة البيانات بترفض إنشاء أي حساب
     const { invite } = await this.rpc('create_invite', { username });
     if (DEV) {
@@ -117,6 +151,7 @@ export const api = {
   },
 
   async setupNeeded() {
+    if (PHP) { try { return (await phpPost('setup_needed', {}, false)) === true; } catch { return false; } }
     if (DEV) return (await devPost('/dev/setup_needed', {})).needed;
     const c = await client();
     const { data, error } = await c.rpc('setup_needed', { p: {} });
@@ -125,6 +160,7 @@ export const api = {
 
   async changePassword(newPassword) {
     if ((newPassword || '').length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل');
+    if (PHP) { await this.rpc('change_my_password', { password: newPassword }); return; }
     if (DEV) return;
     const c = await client();
     const { error } = await c.auth.updateUser({ password: newPassword });
@@ -132,12 +168,14 @@ export const api = {
   },
 
   async logout() {
+    if (PHP) { try { await phpPost('logout', {}); } catch { /* الجلسة خلصت أصلاً */ } localStorage.removeItem(TOKEN_KEY); return; }
     if (DEV) { localStorage.removeItem('dev_uid'); return; }
     const c = await client();
     await c.auth.signOut();
   },
 
   async rpc(fn, p = {}) {
+    if (PHP) return phpPost(fn, { p });
     if (DEV) {
       const j = await devPost('/dev/rpc/' + fn, { uid: localStorage.getItem('dev_uid'), p });
       return j.data;

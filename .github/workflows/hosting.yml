@@ -1,0 +1,80 @@
+name: Hosting version (PHP + MySQL) tests
+
+on:
+  push:
+    paths: ['server/**', 'supabase/**', 'dev/**', '.github/workflows/hosting.yml']
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.db }} / PHP ${{ matrix.php }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { db: 'mysql:8.0', php: '8.3' }
+          - { db: 'mysql:5.7', php: '8.0' }
+          - { db: 'mariadb:10.6', php: '8.1' }
+    services:
+      postgres:
+        image: postgres:16
+        env: { POSTGRES_PASSWORD: pg }
+        ports: ['5432:5432']
+        options: --health-cmd "pg_isready -U postgres" --health-interval 5s --health-retries 30
+      mysql:
+        image: ${{ matrix.db }}
+        env: { MYSQL_ROOT_PASSWORD: root, MYSQL_DATABASE: app, MARIADB_ROOT_PASSWORD: root, MARIADB_DATABASE: app }
+        ports: ['3306:3306']
+        options: --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -proot" --health-interval 5s --health-retries 40
+    env:
+      PGHOST: 127.0.0.1
+      PGPORT: 5432
+      PGUSER: postgres
+      PGPASSWORD: pg
+      PGDATABASE: app
+      MYSQL_HOST: 127.0.0.1
+      MYSQL_USER: root
+      MYSQL_PASS: root
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with: { php-version: '${{ matrix.php }}', extensions: 'pdo_mysql, mbstring', coverage: none }
+
+      - name: 1) البرنامج الحالي (Supabase/PostgreSQL) — الاختبارات + نسخة كاملة للمقارنة
+        run: |
+          psql -d postgres -c "create database app"
+          psql -v ON_ERROR_STOP=1 -q -f dev/supabase_shim.sql
+          psql -v ON_ERROR_STOP=1 -q -f supabase/schema.sql 2>&1 | grep -v NOTICE || true
+          python3 dev/test_flows.py
+          python3 dev/compare.py snapshot out
+
+      - name: 2) نسخة الاستضافة (PHP + MySQL) — نفس الاختبارات بالظبط
+        run: |
+          mysql -h127.0.0.1 -uroot -proot -e "select version()"
+          cp -r server /tmp/srv1
+          printf "<?php return ['db_host'=>'127.0.0.1','db_port'=>3306,'db_name'=>'app','db_user'=>'root','db_pass'=>'root'];\n" > /tmp/srv1/api/config.php
+          mysql -h127.0.0.1 -uroot -proot app < server/api/lib/schema.sql
+          mysql -h127.0.0.1 -uroot -proot app -e "insert into crate_types(name, deposit) values ('صندوق بلاستيك كبير', 50), ('صندوق بلاستيك صغير', 30), ('صندوق خشب (بدون رهن)', 0)"
+          ALAGAMY_DEBUG=1 php -S 127.0.0.1:8099 -t /tmp/srv1 > /tmp/php1.log 2>&1 &
+          sleep 2
+          BACKEND=php MYSQL_DB=app python3 dev/test_flows.py
+
+      - name: 3) برنامج التسطيب + نقل البيانات من Supabase + مقارنة كل الأرقام
+        run: |
+          mysql -h127.0.0.1 -uroot -proot -e "create database app2 character set utf8mb4 collate utf8mb4_unicode_ci"
+          cp -r server /tmp/srv2
+          ALAGAMY_DEBUG=1 php -S 127.0.0.1:8098 -t /tmp/srv2 > /tmp/php2.log 2>&1 &
+          sleep 2
+          curl -s -o /tmp/install.html -F db_host=127.0.0.1 -F db_port=3306 -F db_name=app2 -F db_user=root -F db_pass=root \
+            -F admin_user=admin -F admin_name=المدير -F admin_pass=admin-pass-2026 -F admin_pass2=admin-pass-2026 \
+            -F backup=@out/export.json http://127.0.0.1:8098/api/install.php
+          if ! grep -q "التسطيب خلص بنجاح" /tmp/install.html; then sed -e 's/<[^>]*>/ /g' /tmp/install.html | tr -s ' \n' | head -c 3000; exit 1; fi
+          sed -e 's/<[^>]*>/\n/g' /tmp/install.html | grep -E "اتنقلت|اتربط|اتعمل" || true
+          curl -s -F db_name=x -F db_user=x http://127.0.0.1:8098/api/install.php | grep -q "متسطب بالفعل"
+          echo "✔ التسطيب بيقفل نفسه بعد أول مرة"
+          BACKEND=php PHP_URL=http://127.0.0.1:8098/api/ MYSQL_DB=app2 python3 dev/compare.py check out admin-pass-2026
+
+      - name: سجل السيرفر (لو فيه مشكلة)
+        if: failure()
+        run: tail -n 80 /tmp/php1.log /tmp/php2.log 2>/dev/null || true

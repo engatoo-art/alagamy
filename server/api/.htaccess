@@ -1,0 +1,17 @@
+# ملفات البرنامج الداخلية مش بتتفتح من المتصفح
+Options -Indexes
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteRule ^(lib|fn|data)/ - [F,L]
+  RewriteRule ^(config\.php|schema\.sql)$ - [F,L]
+  RewriteCond %{HTTP:Authorization} .
+  RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
+</IfModule>
+<IfModule !mod_rewrite.c>
+  <FilesMatch "^(config\.php|schema\.sql)$">
+    <IfModule mod_authz_core.c>
+      Require all denied
+    </IfModule>
+  </FilesMatch>
+</IfModule>
+SetEnvIf Authorization "(.*)" HTTP_AUTHORIZATION=$1
