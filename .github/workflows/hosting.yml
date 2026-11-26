@@ -60,6 +60,17 @@ jobs:
           sleep 2
           BACKEND=php MYSQL_DB=app python3 dev/test_flows.py
 
+      - name: 2ب) كل صفحات البرنامج في متصفح حقيقي على نسخة الاستضافة
+        run: |
+          mkdir -p /tmp/site && cp -r docs/. /tmp/site/ && cp -r /tmp/srv1/api /tmp/site/api
+          printf "export const CONFIG = { BACKEND: 'php', API_URL: 'api/' };\n" > /tmp/site/js/config.js
+          php -S 127.0.0.1:8097 -t /tmp/site > /tmp/php3.log 2>&1 &
+          pip install -q playwright && python3 -m playwright install --with-deps chromium > /dev/null
+          python3 dev/ui_sweep.py http://127.0.0.1:8097/ admin pass-admin-2026 /tmp/shots
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.db == 'mysql:8.0'
+        with: { name: screens-hosting, path: /tmp/shots, if-no-files-found: ignore }
+
       - name: 3) برنامج التسطيب + نقل البيانات من Supabase + مقارنة كل الأرقام
         run: |
           mysql --default-character-set=utf8mb4 -h127.0.0.1 -uroot -proot -e "create database app2 character set utf8mb4 collate utf8mb4_unicode_ci"
