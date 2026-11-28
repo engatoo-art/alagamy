@@ -158,9 +158,9 @@ export const api = {
     return !error && data === true;
   },
 
-  async changePassword(newPassword) {
+  async changePassword(newPassword, current) {
     if ((newPassword || '').length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل');
-    if (PHP) { await this.rpc('change_my_password', { password: newPassword }); return; }
+    if (PHP) { await this.rpc('change_my_password', { password: newPassword, current }); return; }
     if (DEV) return;
     const c = await client();
     const { error } = await c.auth.updateUser({ password: newPassword });

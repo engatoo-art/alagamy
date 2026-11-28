@@ -23,6 +23,8 @@ function run_migrations(): void {
   $sql = preg_replace('/^\s*--.*$/m', '', $sql);
   foreach (preg_split('/;\s*\n/', $sql) as $stmt) { if (trim($stmt) !== '') db()->exec($stmt); }
   // أعمدة اتضافت بعد أول نسخة بتتحط هنا: ensure_column('table', 'col', 'col TYPE ...');
+  ensure_column('profiles', 'is_owner', 'is_owner TINYINT(1) NOT NULL DEFAULT 0');
+  _ensure_owner();
 }
 
 $FN['app_version'] = function (array $p) {

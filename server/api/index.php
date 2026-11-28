@@ -76,7 +76,7 @@ try {
     $u = _check_username((string)($body['username'] ?? ''));
     _check_password((string)($body['password'] ?? ''));
     $id = uuid4();
-    ex("INSERT INTO profiles(id, username, password_hash, full_name, role, active, perms) VALUES (?,?,?,?, 'admin', 1, '{}')",
+    ex("INSERT INTO profiles(id, username, password_hash, full_name, role, active, perms, is_owner) VALUES (?,?,?,?, 'admin', 1, '{}', 1)",
       [$id, $u, password_hash((string)$body['password'], PASSWORD_BCRYPT), trim((string)($body['full_name'] ?? ''))]);
     $tok = new_session($id);
     db()->commit();

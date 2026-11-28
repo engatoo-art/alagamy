@@ -24,7 +24,8 @@ CREATE TABLE IF NOT EXISTS profiles (
   purged_at DATETIME(6) NULL,
   email VARCHAR(200) NOT NULL DEFAULT '',
   phone VARCHAR(40) NOT NULL DEFAULT '',
-  whatsapp VARCHAR(40) NOT NULL DEFAULT ''
+  whatsapp VARCHAR(40) NOT NULL DEFAULT '',
+  is_owner TINYINT(1) NOT NULL DEFAULT 0
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- جلسات الدخول: بنخزن بصمة التوكن بس، مش التوكن نفسه

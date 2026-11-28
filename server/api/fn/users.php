@@ -8,6 +8,8 @@ $FN['setup_needed'] = function (array $p) {
 
 $FN['app_bootstrap'] = function (array $p) {
   if (!uid()) fail('لازم تسجل دخول الأول');
+  _ensure_owner();
+  reload_me();
   $me = profile_out(me());
   if (!me()['active']) return ['me' => $me];
   _purge_deleted();
@@ -33,6 +35,7 @@ function _purge_deleted(): void {
 $FN['list_users'] = function (array $p) {
   _need('users');
   _purge_deleted();
+  _ensure_owner();
   $rows = q('SELECT * FROM profiles WHERE purged_at IS NULL ORDER BY created_at');
   $now = time();
   return array_map(function ($u) use ($now) {
@@ -70,6 +73,7 @@ $FN['admin_set_password'] = function (array $p) {
   $r = q1('SELECT * FROM profiles WHERE id = ? AND purged_at IS NULL', [$id]);
   if (!$r) fail('الحساب غير موجود');
   if ($id === uid()) fail('كلمة السر بتاعتك غيّرها من "حسابي"');
+  _guard_target($r);
   _check_password((string)($p['password'] ?? ''));
   ex('UPDATE profiles SET password_hash = ? WHERE id = ?', [password_hash((string)$p['password'], PASSWORD_BCRYPT), $id]);
   ex('DELETE FROM sessions WHERE user_id = ?', [$id]);
@@ -78,11 +82,28 @@ $FN['admin_set_password'] = function (array $p) {
 
 $FN['change_my_password'] = function (array $p) {
   _need(null);
+  // لازم كلمة السر الحالية علشان لو حد لقى الجهاز مفتوح ميقدرش يغيرها
+  if (!password_verify((string)($p['current'] ?? ''), (string)(q1('SELECT password_hash FROM profiles WHERE id = ?', [uid()])['password_hash'] ?? ''))) {
+    fail('كلمة السر الحالية غلط');
+  }
   _check_password((string)($p['password'] ?? ''));
   ex('UPDATE profiles SET password_hash = ? WHERE id = ?', [password_hash((string)$p['password'], PASSWORD_BCRYPT), uid()]);
   // بيخرج من كل الأجهزة التانية ويفضل داخل على الجهاز ده
   ex('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', [uid(), $GLOBALS['TOKEN_HASH'] ?? '']);
   return ['ok' => true];
+};
+
+// كل مستخدم يعدل بيانات التواصل بتاعته بنفسه (الإيميل والموبايل والواتساب)
+$FN['save_my_contacts'] = function (array $p) {
+  _need(null);
+  $email = strtolower(trim((string)($p['email'] ?? '')));
+  if ($email !== '' && !preg_match('/^[^@\s]+@[^@\s]+\.[^@\s]+$/u', $email)) fail('الإيميل مكتوب غلط');
+  $num = fn($k) => preg_replace('/[^0-9+]/', '', (string)($p[$k] ?? ''));
+  foreach (['phone', 'whatsapp'] as $k) {
+    if (!preg_match('/^([0-9]{8,15})?$/', preg_replace('/[^0-9]/', '', $num($k)))) fail('رقم الموبايل أو الواتساب مكتوب غلط');
+  }
+  ex('UPDATE profiles SET email = ?, phone = ?, whatsapp = ? WHERE id = ?', [$email, $num('phone'), $num('whatsapp'), uid()]);
+  return profile_out(q1('SELECT * FROM profiles WHERE id = ?', [uid()]));
 };
 
 $FN['delete_user'] = function (array $p) {
@@ -91,6 +112,7 @@ $FN['delete_user'] = function (array $p) {
   $r = q1('SELECT * FROM profiles WHERE id = ? AND purged_at IS NULL', [$id]);
   if (!$r) fail('الحساب غير موجود');
   if ($id === uid()) fail('مينفعش تحذف حسابك انت');
+  _guard_target($r);
   if ($r['role'] === 'admin') fail('ده حساب مدير — غيّره لمحاسب الأول لو عاوز تحذفه');
   if ($r['deleted_at']) fail('الحساب ده محذوف بالفعل');
   if (qv("SELECT 1 FROM cash_shifts WHERE user_id = ? AND status = 'open'", [$id])) {
@@ -107,6 +129,7 @@ $FN['restore_user'] = function (array $p) {
   $id = _t($p, 'id');
   $r = q1('SELECT * FROM profiles WHERE id = ?', [$id]);
   if (!$r || !$r['deleted_at']) fail('الحساب ده مش محذوف');
+  _guard_target($r);
   if ($r['purged_at']) fail('عدّى أكتر من 7 أيام والحساب اتمسح نهائي — اعمله حساب جديد');
   ex('UPDATE profiles SET active = COALESCE(was_active, 1), deleted_at = NULL, deleted_by = NULL, was_active = NULL WHERE id = ?', [$id]);
   return ['ok' => true];
@@ -120,8 +143,10 @@ $FN['save_user'] = function (array $p) {
   if (qv('SELECT 1 FROM profiles WHERE id = ? AND deleted_at IS NOT NULL', [$id])) fail('الحساب ده محذوف — استرجعه الأول');
   $r = q1('SELECT * FROM profiles WHERE id = ?', [$id]);
   if (!$r) fail('المستخدم غير موجود');
+  _guard_target($r);
   $active = _b($p, 'active');
   if ($id === uid() && (($role ?? $r['role']) !== 'admin' || $active === false)) fail('مينفعش تشيل صلاحية المدير أو توقف حسابك انت');
+  if ($role !== null && $role !== $r['role'] && !_is_owner()) fail('صاحب البرنامج بس اللي يقدر يعمل حد مدير أو يشيل منه الإدارة');
   $email = has_key($p, 'email') ? strtolower(trim((string)$p['email'])) : null;
   if ($email !== null && $email !== '' && !preg_match('/^[^@\s]+@[^@\s]+\.[^@\s]+$/u', $email)) fail('الإيميل مكتوب غلط');
   foreach (['phone', 'whatsapp'] as $k) {

@@ -167,6 +167,22 @@ function _uname(?string $id): ?string {
 }
 
 /** الحساب للعرض: من غير كلمة السر */
+/** صاحب البرنامج: حساب واحد محمي — محدش يعدل عليه غيره، وهو بس اللي يعدل على حسابات المديرين */
+function _ensure_owner(): void {
+  try { qv('SELECT is_owner FROM profiles LIMIT 1'); } catch (PDOException $e) { return; } // لسه التحديث مخلصش
+  if (qv('SELECT 1 FROM profiles WHERE is_owner = 1 AND purged_at IS NULL')) return;
+  $id = qv("SELECT id FROM profiles WHERE username = 'osama' AND role = 'admin' AND purged_at IS NULL")
+     ?: qv("SELECT id FROM profiles WHERE role = 'admin' AND active = 1 AND deleted_at IS NULL ORDER BY created_at LIMIT 1");
+  if ($id) ex('UPDATE profiles SET is_owner = 1 WHERE id = ?', [$id]);
+}
+function _is_owner(): bool { return !empty(me()['is_owner']); }
+/** بيمنع أي حد يعدل على حساب صاحب البرنامج، وبيمنع غير صاحب البرنامج يعدل على حسابات المديرين */
+function _guard_target(array $r): void {
+  if ($r['id'] === uid()) return;
+  if (!empty($r['is_owner'])) fail('ده حساب صاحب البرنامج — محدش يقدر يعدل عليه غيره');
+  if ($r['role'] === 'admin' && !_is_owner()) fail('حسابات المديرين صاحب البرنامج بس اللي يقدر يعدل عليها');
+}
+
 function profile_out(array $r): array {
   unset($r['password_hash'], $r['was_active']);
   $r['perms'] = (object)jdec($r['perms'] ?? '{}');

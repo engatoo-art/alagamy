@@ -86,6 +86,7 @@ if (file_exists($lock)) {
         [uuid4(), $adminU, $hash, trim((string)($_POST['admin_name'] ?? ''))]);
       $done[] = 'اتعمل حساب المدير "' . h($adminU) . '"';
     }
+    ex('UPDATE profiles SET is_owner = (username = ?)', [$adminU]); // اللي سطّب البرنامج هو صاحبه
     db()->commit();
     file_put_contents($lock, date('c'));
     // SSL شغال (التسطيب نفسه جاي على https) — نخلي الموقع كله يتحول لـ https

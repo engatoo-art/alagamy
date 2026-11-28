@@ -452,3 +452,6 @@ body {
 .combo-list .opt small { color: var(--ink-3); }
 .combo-list .opt > span { flex: 1; font-weight: 600; }
 .combo-list .opt small { white-space: nowrap; align-self: center; }
+/* حساب محمي: باين بشكل باهت ومن غير زراير تعديل */
+tr.locked td { opacity: .5; }
+tr.locked td:last-child { opacity: .85; }

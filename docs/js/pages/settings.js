@@ -107,22 +107,27 @@ async function users(app, body, query) {
   const draw = async () => {
     const all = await api.rpc('list_users');
     const list = all.filter((u) => !u.deleted_at), gone = all.filter((u) => u.deleted_at);
+    // صاحب البرنامج محدش يعدل عليه غيره، وحسابات المديرين صاحب البرنامج بس اللي يعدل عليها
+    const canEdit = (u) => u.id === app.me.id || (!u.is_owner && (u.role !== 'admin' || app.me.is_owner));
+    const lockNote = (u) => u.is_owner ? 'محمي — صاحب البرنامج بس' : 'صاحب البرنامج بس اللي يعدل عليه';
     body.innerHTML = `<div class="row" style="margin-bottom:14px"><button class="btn primary" id="addUser">${icon('userPlus')} إضافة محاسب أو مدير</button>
         <span class="muted small">محدش يقدر يعمل حساب غير المدير من هنا.</span></div>
       <div class="panel"><div class="tbl-wrap"><table class="t"><thead><tr><th>الاسم</th><th>اسم الدخول</th><th>التواصل</th><th>النوع</th><th>الحالة</th><th>الصلاحيات</th><th></th></tr></thead>
-      <tbody>${list.map((u) => `<tr><td><b>${esc(u.full_name || '—')}</b>${u.id === app.me.id ? ' <span class="muted small">(انت)</span>' : ''}
+      <tbody>${list.map((u) => `<tr class="${canEdit(u) ? '' : 'locked'}"><td><b>${esc(u.full_name || '—')}</b>${u.id === app.me.id ? ' <span class="muted small">(انت)</span>' : ''}
+          ${u.is_owner ? ` ${tag('ok', 'صاحب البرنامج')}` : ''}
           ${u.phone ? `<div class="small muted num" dir="ltr" style="text-align:right">${esc(u.phone)}</div>` : ''}</td><td class="num">${esc(u.username)}</td>
         <td style="white-space:nowrap">${contactLinks(u, welcomeText(u)) || '<span class="muted small">—</span>'}</td>
         <td>${u.role === 'admin' ? tag('approved', 'مدير') : 'محاسب'}</td><td>${u.active ? tag('ok', 'شغال') : tag('pending', 'موقوف')}</td>
         <td class="small muted">${u.role === 'admin' ? 'كل الصلاحيات' : PERMS.filter(([k]) => u.perms?.[k]).map(([, l]) => l).join('، ') || 'ولا حاجة'}</td>
-        <td style="white-space:nowrap"><button class="btn sm ${u.active ? 'ghost' : 'primary'}" data-u="${u.id}">${u.active ? 'تعديل' : 'تفعيل'}</button>
-          ${u.id !== app.me.id && u.role !== 'admin' ? `<button class="btn sm ghost danger" data-del="${u.id}">${icon('trash')} حذف</button>` : ''}</td></tr>`).join('')}</tbody></table></div></div>
+        <td style="white-space:nowrap">${canEdit(u) ? `<button class="btn sm ${u.active ? 'ghost' : 'primary'}" data-u="${u.id}">${u.active ? 'تعديل' : 'تفعيل'}</button>
+          ${u.id !== app.me.id && u.role !== 'admin' ? `<button class="btn sm ghost danger" data-del="${u.id}">${icon('trash')} حذف</button>` : ''}`
+          : `<span class="small muted">${icon('key')} ${lockNote(u)}</span>`}</td></tr>`).join('')}</tbody></table></div></div>
       ${gone.length ? `<div class="panel"><div class="ph"><h2>${icon('trash')} حسابات محذوفة</h2><span class="muted small">تقدر تسترجع أي حساب خلال 7 أيام من حذفه، وبعدها بيتمسح نهائي.</span></div>
         <div class="tbl-wrap"><table class="t"><thead><tr><th>الاسم</th><th>اسم الدخول</th><th>اتحذف</th><th>حذفه</th><th>فاضل للمسح النهائي</th><th></th></tr></thead>
         <tbody>${gone.map((u) => `<tr class="void"><td><b>${esc(u.full_name || '—')}</b></td><td class="num">${esc(u.username)}</td>
           <td>${dateT(String(u.deleted_at).slice(0, 10))}</td><td class="small muted">${esc(u.deleted_by_name || '')}</td>
           <td>${tag(u.days_left <= 1 ? 'rejected' : 'pending', u.days_left <= 0 ? 'النهارده' : u.days_left === 1 ? 'يوم واحد' : u.days_left + ' أيام')}</td>
-          <td><button class="btn sm primary" data-res="${u.id}">${icon('back')} استرجاع</button></td></tr>`).join('')}</tbody></table></div></div>` : ''}`;
+          <td>${canEdit(u) ? `<button class="btn sm primary" data-res="${u.id}">${icon('back')} استرجاع</button>` : `<span class="small muted">${lockNote(u)}</span>`}</td></tr>`).join('')}</tbody></table></div></div>` : ''}`;
     body.querySelectorAll('[data-u]').forEach((b) => b.onclick = () => form(list.find((u) => u.id === b.dataset.u)));
     body.querySelectorAll('[data-del]').forEach((b) => b.onclick = async () => {
       const u = list.find((x) => x.id === b.dataset.del);
@@ -150,8 +155,9 @@ async function users(app, body, query) {
         ${isNew ? `<div class="grid g2"><label class="f">اسم الدخول (بالإنجليزي)<input class="in" name="username" dir="ltr" autocapitalize="none" placeholder="مثلاً: mona"></label>
           <label class="f">كلمة المرور (8 على الأقل)<input class="in" name="password" dir="ltr" placeholder="ابعتها للمحاسب"></label></div>` : ''}
         <div class="grid g3"><label class="f">الاسم<input class="in" name="full_name" value="${esc(u.full_name)}"></label>
-        <label class="f">النوع<select class="in" name="role" ${self ? 'disabled' : ''}><option value="accountant" ${u.role !== 'admin' ? 'selected' : ''}>محاسب</option>
-          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير (كل الصلاحيات)</option></select></label>
+        <label class="f">النوع<select class="in" name="role" ${self || !app.me.is_owner ? 'disabled' : ''}><option value="accountant" ${u.role !== 'admin' ? 'selected' : ''}>محاسب</option>
+          <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>مدير (كل الصلاحيات)</option></select>
+          ${!app.me.is_owner && !self ? '<span class="muted small">صاحب البرنامج بس اللي يعمل حد مدير</span>' : ''}</label>
         <label class="check" style="align-self:end"><input type="checkbox" name="active" checked ${self ? 'disabled' : ''}> الحساب شغال</label></div>
         <div><b>بيانات التواصل</b> <span class="muted small">(اختياري)</span></div>
         <div class="grid g3"><label class="f">رقم الموبايل<input class="in" name="phone" type="tel" dir="ltr" value="${esc(u.phone || '')}" placeholder="01xxxxxxxxx"></label>
@@ -287,18 +293,42 @@ async function backup(app, body) {
 
 // ---------- حسابي ----------
 export async function renderAccount({ app, el }) {
+  const me = app.me;
   el.innerHTML = `<div class="page-head"><h1>حسابي</h1></div>
-    <div class="panel"><div class="pb grid" style="max-width:420px">
-      <div>الاسم: <b>${esc(app.me.full_name)}</b><br>اسم الدخول: <b class="num">${esc(app.me.username)}</b><br>النوع: ${app.me.role === 'admin' ? 'مدير' : 'محاسب'}</div>
-      <label class="f">كلمة مرور جديدة<input class="in" type="password" id="p1" dir="ltr" autocomplete="new-password"></label>
+    <div class="grid g2" style="align-items:start">
+    <div class="panel" style="margin:0"><div class="ph"><h2>${icon('user')} بياناتي</h2></div><div class="pb grid">
+      <div>الاسم: <b>${esc(me.full_name)}</b><br>اسم الدخول: <b class="num">${esc(me.username)}</b><br>النوع: ${me.role === 'admin' ? 'مدير' : 'محاسب'}
+        ${me.is_owner ? ` ${tag('ok', 'صاحب البرنامج')}<div class="muted small" style="margin-top:4px">حسابك محمي: محدش يقدر يعدل عليه أو يحذفه غيرك.</div>` : ''}</div>
+      <form class="grid" id="cf">
+        <label class="f">رقم الموبايل<input class="in" name="phone" type="tel" dir="ltr" value="${esc(me.phone || '')}" placeholder="01xxxxxxxxx"></label>
+        <label class="f">رقم الواتساب<input class="in" name="whatsapp" type="tel" dir="ltr" value="${esc(me.whatsapp || '')}" placeholder="لو فاضي هيستخدم رقم الموبايل"></label>
+        <label class="f">الإيميل<input class="in" name="email" type="email" dir="ltr" value="${esc(me.email || '')}" placeholder="name@gmail.com"></label>
+        <div><button class="btn primary" type="submit">${icon('check')} احفظ بياناتي</button></div>
+      </form></div></div>
+    <div class="panel" style="margin:0"><div class="ph"><h2>${icon('key')} كلمة المرور</h2></div><div class="pb grid">
+      <label class="f">كلمة المرور الحالية<input class="in" type="password" id="p0" dir="ltr" autocomplete="current-password"></label>
+      <label class="f">كلمة مرور جديدة (8 على الأقل)<input class="in" type="password" id="p1" dir="ltr" autocomplete="new-password"></label>
       <label class="f">اكتبها تاني<input class="in" type="password" id="p2" dir="ltr" autocomplete="new-password"></label>
-      <div><button class="btn primary" id="save">تغيير كلمة المرور</button></div></div></div>`;
+      <div class="muted small">بعد التغيير هتخرج من كل الأجهزة التانية، وتفضل داخل على الجهاز ده.</div>
+      <div><button class="btn primary" id="save">تغيير كلمة المرور</button></div></div></div>
+    </div>`;
+  const cf = el.querySelector('#cf');
+  cf.onsubmit = (e) => {
+    e.preventDefault();
+    busy(cf.querySelector('[type=submit]'), async () => {
+      const v = formData(cf);
+      const r = await api.rpc('save_my_contacts', v);
+      Object.assign(app.me, { email: r.email, phone: r.phone, whatsapp: r.whatsapp });
+      ok('اتحفظت بياناتك');
+    });
+  };
   el.querySelector('#save').onclick = (e) => busy(e.currentTarget, async () => {
-    const a = el.querySelector('#p1').value, b = el.querySelector('#p2').value;
+    const c = el.querySelector('#p0').value, a = el.querySelector('#p1').value, b = el.querySelector('#p2').value;
+    if (!c) throw new Error('اكتب كلمة المرور الحالية');
     if (a.length < 8) throw new Error('كلمة المرور لازم تكون 8 حروف أو أرقام على الأقل');
     if (a !== b) throw new Error('الكلمتين مش زي بعض');
-    await api.changePassword(a);
+    await api.changePassword(a, c);
     ok('اتغيرت كلمة المرور');
-    el.querySelector('#p1').value = el.querySelector('#p2').value = '';
+    el.querySelectorAll('#p0,#p1,#p2').forEach((x) => { x.value = ''; });
   });
 }
