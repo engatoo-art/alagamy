@@ -101,7 +101,8 @@ try {
   if (!isset($FN[$fn])) out(404, ['error' => 'العملية دي مش موجودة']);
   db()->beginTransaction();
   $res = $FN[$fn]($p);
-  db()->commit();
+  // عمليات زي التحديث بتعدّل الجداول، وده بيقفل المعاملة لوحده في MySQL
+  try { if (db()->inTransaction()) db()->commit(); } catch (PDOException $e) { /* اتقفلت لوحدها */ }
   out(200, ['data' => $res]);
 } catch (AppError $e) {
   if (db_started()) db()->rollBack();

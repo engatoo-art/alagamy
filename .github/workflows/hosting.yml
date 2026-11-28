@@ -60,6 +60,22 @@ jobs:
           sleep 2
           BACKEND=php MYSQL_DB=app python3 dev/test_flows.py
 
+      - name: 2ج) زرار "حدّث البرنامج" (بينزّل آخر نسخة من GitHub ويحدّث من غير ما البيانات تتأثر)
+        run: |
+          BACKEND=php MYSQL_DB=app python3 - <<'PY'
+          import sys; sys.path.insert(0, 'dev')
+          import harness as H
+          d = H.http("login", {"username": "admin", "password": "pass-admin-2026"})
+          tok = d["token"]
+          before = H.http("dashboard", {"p": {}}, tok)
+          r = H.http("self_update", {"p": {}}, tok)
+          assert r["ok"] and r["files"] > 50, r
+          after = H.http("dashboard", {"p": {}}, tok)
+          assert before["total_debts"] == after["total_debts"] and before["sales_count"] == after["sales_count"]
+          print("✔ التحديث نزل", r["files"], "ملف والبيانات زي ما هي")
+          PY
+          test -f /tmp/srv1/api/config.php
+
       - name: 2ب) كل صفحات البرنامج في متصفح حقيقي على نسخة الاستضافة
         run: |
           mkdir -p /tmp/site && cp -r docs/. /tmp/site/ && cp -r /tmp/srv1/api /tmp/site/api

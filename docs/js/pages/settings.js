@@ -15,7 +15,8 @@ export async function render({ app, el, query }) {
   const tabs = [
     ['shop', 'بيانات المحل', 'settings'], ['crates', 'الصناديق والرهن', 'settings'], ['items', 'الأصناف', 'settings'],
     ['users', 'المستخدمين والصلاحيات', 'users'], ['backup', 'النسخة الاحتياطية', 'backup'],
-  ].filter((t) => (t[2] === 'users' ? app.me.role === 'admin' : app.can(t[2])));
+    ...(api.php ? [['update', 'تحديث البرنامج', 'admin']] : []),
+  ].filter((t) => (t[2] === 'users' || t[2] === 'admin' ? app.me.role === 'admin' : app.can(t[2])));
   let tab = tabs.find((t) => t[0] === query.tab)?.[0] || tabs[0][0];
   el.innerHTML = `<div class="page-head"><h1>الإعدادات</h1></div>
     <div class="tabs" id="tabs">${tabs.map((t) => `<button data-t="${t[0]}">${t[1]}</button>`).join('')}</div><div id="body"></div>`;
@@ -23,7 +24,7 @@ export async function render({ app, el, query }) {
   const show = async () => {
     el.querySelectorAll('#tabs button').forEach((b) => b.classList.toggle('on', b.dataset.t === tab));
     body.innerHTML = '<div class="empty">جاري التحميل…</div>';
-    await ({ shop, crates, items, users, backup })[tab](app, body, query);
+    await ({ shop, crates, items, users, backup, update })[tab](app, body, query);
   };
   el.querySelector('#tabs').onclick = (e) => { const b = e.target.closest('button'); if (b) { tab = b.dataset.t; query.user = null; show().catch(err); } };
   await show();
@@ -215,6 +216,22 @@ async function users(app, body, query) {
 }
 
 // ---------- النسخة الاحتياطية ----------
+// نسخة الاستضافة: تحديث البرنامج لآخر نسخة بضغطة واحدة
+async function update(app, body) {
+  const v = await api.rpc('app_version');
+  body.innerHTML = `<div class="panel"><div class="pb grid" style="max-width:640px">
+    <div>النسخة الحالية: <b class="num">${esc(v.version || 'غير معروفة')}</b> <span class="muted small">— PHP ${esc(v.php)}</span></div>
+    <p class="muted" style="margin:0">لما أبعتلك إن فيه تعديل جديد، دوس الزرار ده والبرنامج هيتحدث لوحده من غير ما بياناتك تتأثر.
+      بعد التحديث كل الأجهزة هتاخد النسخة الجديدة أول ما تتفتح.</p>
+    <div><button class="btn primary lg" id="upd">${icon('download')} حدّث البرنامج لآخر نسخة</button></div>
+  </div></div>`;
+  body.querySelector('#upd').onclick = (e) => busy(e.currentTarget, async () => {
+    const r = await api.rpc('self_update');
+    ok(`اتحدث البرنامج (${r.files} ملف) — النسخة ${r.version}`);
+    setTimeout(() => location.reload(), 1200);
+  });
+}
+
 async function backup(app, body) {
   const desk = desktop ? await hostCall('backup-config').catch(() => null) : null;
   body.innerHTML = `<div class="panel"><div class="pb grid" style="max-width:720px">

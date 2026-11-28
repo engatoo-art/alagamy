@@ -1,3 +1,5 @@
+// البرنامج اتنقل على الاستضافة بتاعة المحل — اللينك القديم (أو أي نسخة قديمة من البرامج) بيروح على الجديد
+if (/github\.io$/i.test(location.hostname)) location.replace('https://alagmy.com/shop/' + location.hash);
 import { api } from './api.js';
 import { esc, icon, err, toast } from './ui.js';
 import * as dash from './pages/dashboard.js';

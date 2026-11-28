@@ -122,6 +122,7 @@ jobs:
           printf "// نسخة الاستضافة: البرنامج بيكلم api/ على نفس الموقع\nexport const CONFIG = { BACKEND: 'php', API_URL: 'api/index.php' };\n" > host/js/config.js
           cp src/server/htaccess-root.txt host/.htaccess
           cp src/server/README-hosting.md host/README-hosting.md
+          echo "1.0.${{ github.run_number }} — $(date -u +%Y-%m-%d)" > host/version.txt
           cd host && zip -qr ../Alagamy-hosting.zip . && cd .. && ls -la Alagamy-hosting.zip
       - name: Publish download links
         env:
