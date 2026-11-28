@@ -34,6 +34,7 @@
   .size { color:var(--ink-3); font-size:13px; text-align:center; margin:0; }
   ol { margin:0; padding-inline-start:20px; color:var(--ink-2); font-size:14.5px; }
   ol li { margin-bottom:4px; }
+  .ios { margin-top:14px; }
   .web { margin-top:16px; background:var(--crate-soft); border-radius:12px; padding:16px 20px; }
   .web a { color:var(--crate-deep); font-weight:700; }
   @media (max-width:600px) { .pick { grid-template-columns:1fr; } h1 { font-size:22px; } }
@@ -42,7 +43,7 @@
 <body>
 <header><div class="wrap brand">
   <img src="../img/logo.png" alt="">
-  <div><h1>تحميل برنامج محلات عبده العجمي</h1><p>اختار الجهاز اللي هتسطّب عليه البرنامج</p></div>
+  <div><h1>تحميل برنامج محلات عبده العجمي</h1><p>اختار الجهاز اللي هتسطّب عليه البرنامج: كمبيوتر، أندرويد، أو آيفون</p></div>
 </div></header>
 
 <main><div class="wrap">
@@ -72,15 +73,25 @@
     </section>
   </div>
 
-  <div class="web">آيفون أو أي جهاز تاني؟ افتح البرنامج من المتصفح على طول:
-    <a href="../" dir="ltr">alagmy.com/shop</a></div>
+  <section class="card ios" id="ios">
+    <h2>الآيفون</h2>
+    <p class="for">من غير تحميل — البرنامج بيتحط على الشاشة زي أي تطبيق</p>
+    <ol>
+      <li>افتح <a href="../" dir="ltr">alagmy.com/shop</a> من <b>Safari</b> (مش كروم).</li>
+      <li>دوس زرار المشاركة <b>⬆︎</b> اللي تحت في نص الشاشة.</li>
+      <li>انزل واختار <b>إضافة إلى الشاشة الرئيسية</b> (Add to Home Screen)، وبعدين <b>إضافة</b>.</li>
+      <li>هتلاقي أيقونة "العجمي" على الشاشة، افتحها وسجّل دخولك.</li>
+    </ol>
+  </section>
 </div></main>
 
 <script>
   // نبيّن الاختيار المناسب للجهاز اللي فاتح الصفحة
   var a = /android/i.test(navigator.userAgent);
   var w = /windows/i.test(navigator.userAgent);
-  if (a) { var c = document.getElementById('android'); c.classList.add('mine'); c.parentNode.prepend(c); }
+  var i = /iphone|ipad|ipod/i.test(navigator.userAgent) || (/macintosh/i.test(navigator.userAgent) && 'ontouchend' in document);
+  if (i) { var s = document.getElementById('ios'); s.classList.add('mine'); var m = document.querySelector('main .wrap'); m.prepend(s); s.style.marginTop = '0'; s.style.marginBottom = '14px'; }
+  else if (a) { var c = document.getElementById('android'); c.classList.add('mine'); c.parentNode.prepend(c); }
   else if (w) document.getElementById('win').classList.add('mine');
 </script>
 </body>
