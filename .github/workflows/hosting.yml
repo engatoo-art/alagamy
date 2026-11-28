@@ -67,17 +67,17 @@ jobs:
           import harness as H
           d = H.http("login", {"username": "admin", "password": "pass-admin-2026"})
           tok = d["token"]
+          r = H.http("update_downloads", {"p": {}}, tok)
+          assert r["ok"] and r["files"]["AlagamySetup.exe"] > 5 and r["files"]["Alagamy.apk"] > 1, r
+          v = H.http("app_version", {"p": {}}, tok)
+          assert all(v["downloads"].values()), v
+          print("✔ ملفات التحميل اتنزلت على الموقع", r["files"])
           before = H.http("dashboard", {"p": {}}, tok)
           r = H.http("self_update", {"p": {}}, tok)
           assert r["ok"] and r["files"] > 50, r
           after = H.http("dashboard", {"p": {}}, tok)
           assert before["total_debts"] == after["total_debts"] and before["sales_count"] == after["sales_count"]
           print("✔ التحديث نزل", r["files"], "ملف والبيانات زي ما هي")
-          r = H.http("update_downloads", {"p": {}}, tok)
-          assert r["ok"] and r["files"]["AlagamySetup.exe"] > 5 and r["files"]["Alagamy.apk"] > 1, r
-          v = H.http("app_version", {"p": {}}, tok)
-          assert all(v["downloads"].values()), v
-          print("✔ ملفات التحميل اتنزلت على الموقع", r["files"])
           PY
           test -s /tmp/srv1/download/AlagamySetup.exe && test -s /tmp/srv1/download/Alagamy.apk
           test -f /tmp/srv1/api/config.php
