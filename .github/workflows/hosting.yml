@@ -89,7 +89,7 @@ jobs:
           sleep 1
           curl -s -F db_name=x -F db_user=x -F admin_user=admin -F admin_pass=12345678 -F admin_pass2=12345678 http://127.0.0.1:8096/api/install.php | grep -q "شهادة الأمان"
           test ! -f /tmp/srv3/api/config.php
-          echo "✔ التسطيب مش بيكمل من غير https
+          echo "✔ التسطيب مش بيكمل من غير https"
 
       - name: سجل السيرفر (لو فيه مشكلة)
         if: failure()
