@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>تحميل برنامج محلات عبده العجمي</title>
+<link rel="icon" href="../img/favicon.png">
+<link rel="stylesheet" href="../css/fonts.css">
+<style>
+  :root { --ink:#1d2a24; --ink-2:#4c5a53; --ink-3:#7d8a83; --paper:#f4f6f1; --line:#dfe4db;
+          --crate:#1f6b45; --crate-deep:#154d31; --crate-soft:#e4f0e8; --citrus:#e89a0c; }
+  * { box-sizing: border-box; }
+  body { margin:0; font-family:"IBM Plex Sans Arabic","Segoe UI",Tahoma,sans-serif; color:var(--ink);
+         background:var(--paper); line-height:1.6; font-size:16px; }
+  header { background:var(--crate-deep); color:#fff; padding:28px 20px 64px; }
+  .wrap { max-width:760px; margin:0 auto; }
+  .brand { display:flex; align-items:center; gap:14px; }
+  .brand img { width:58px; height:58px; border-radius:12px; background:#fff; padding:4px; }
+  h1 { margin:0; font-size:26px; line-height:1.25; }
+  header p { margin:6px 0 0; color:#cfe3d6; }
+  main { margin-top:-44px; padding:0 16px 40px; }
+  .pick { display:grid; grid-template-columns:1fr 1fr; gap:14px; }
+  .card { background:#fff; border:1px solid var(--line); border-radius:12px; padding:20px;
+          display:flex; flex-direction:column; gap:10px; }
+  .card.mine { border:2px solid var(--crate); }
+  .card h2 { margin:0; font-size:19px; }
+  .card .for { color:var(--ink-3); font-size:14px; margin:0; }
+  .btn { display:flex; align-items:center; justify-content:center; gap:8px; text-decoration:none;
+         background:var(--crate); color:#fff; font-weight:700; font-size:17px; padding:14px 16px;
+         border-radius:10px; margin-top:auto; }
+  .btn:hover { background:var(--crate-deep); }
+  .btn:focus-visible { outline:3px solid var(--citrus); outline-offset:2px; }
+  .btn svg { width:20px; height:20px; }
+  .size { color:var(--ink-3); font-size:13px; text-align:center; margin:0; }
+  ol { margin:0; padding-inline-start:20px; color:var(--ink-2); font-size:14.5px; }
+  ol li { margin-bottom:4px; }
+  .web { margin-top:16px; background:var(--crate-soft); border-radius:12px; padding:16px 20px; }
+  .web a { color:var(--crate-deep); font-weight:700; }
+  @media (max-width:600px) { .pick { grid-template-columns:1fr; } h1 { font-size:22px; } }
+</style>
+</head>
+<body>
+<header><div class="wrap brand">
+  <img src="../img/logo.png" alt="">
+  <div><h1>تحميل برنامج محلات عبده العجمي</h1><p>اختار الجهاز اللي هتسطّب عليه البرنامج</p></div>
+</div></header>
+
+<main><div class="wrap">
+  <div class="pick">
+    <section class="card" id="win">
+      <h2>الكمبيوتر</h2>
+      <p class="for">ويندوز 10 أو 11</p>
+      <ol>
+        <li>نزّل الملف وافتحه.</li>
+        <li>لو ظهرت رسالة "Windows protected your PC" دوس <b>More info</b> وبعدين <b>Run anyway</b>.</li>
+        <li>كمّل خطوات التسطيب، وهتلاقي أيقونة البرنامج على سطح المكتب.</li>
+      </ol>
+      <a class="btn" href="AlagamySetup.exe" download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>نزّل برنامج الكمبيوتر</a>
+      <p class="size">حوالي 60 ميجا</p>
+    </section>
+
+    <section class="card" id="android">
+      <h2>الموبايل</h2>
+      <p class="for">أندرويد</p>
+      <ol>
+        <li>نزّل الملف وافتحه من الإشعارات أو من "التنزيلات".</li>
+        <li>لو طلب إذن "تثبيت تطبيقات غير معروفة" وافق عليه للمتصفح.</li>
+        <li>دوس <b>تثبيت</b>، وافتح البرنامج وسجّل دخولك.</li>
+      </ol>
+      <a class="btn" href="Alagamy.apk" download><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>نزّل تطبيق الموبايل</a>
+      <p class="size">حوالي 7 ميجا</p>
+    </section>
+  </div>
+
+  <div class="web">آيفون أو أي جهاز تاني؟ افتح البرنامج من المتصفح على طول:
+    <a href="../" dir="ltr">alagmy.com/shop</a></div>
+</div></main>
+
+<script>
+  // نبيّن الاختيار المناسب للجهاز اللي فاتح الصفحة
+  var a = /android/i.test(navigator.userAgent);
+  var w = /windows/i.test(navigator.userAgent);
+  if (a) { var c = document.getElementById('android'); c.classList.add('mine'); c.parentNode.prepend(c); }
+  else if (w) document.getElementById('win').classList.add('mine');
+</script>
+</body>
+</html>

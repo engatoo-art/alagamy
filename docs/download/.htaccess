@@ -1,0 +1,13 @@
+# ملفات التحميل: تتنزل على طول بدل ما تتفتح في المتصفح
+DirectoryIndex index.html
+AddType application/vnd.android.package-archive .apk
+AddType application/vnd.microsoft.portable-executable .exe
+<FilesMatch "\.(apk|exe)$">
+  <IfModule mod_headers.c>
+    Header set Content-Disposition "attachment"
+    Header set Cache-Control "no-cache"
+  </IfModule>
+</FilesMatch>
+<FilesMatch "\.part$">
+  Require all denied
+</FilesMatch>

@@ -27,7 +27,55 @@ function run_migrations(): void {
 
 $FN['app_version'] = function (array $p) {
   _need_admin();
-  return ['version' => _version(), 'php' => PHP_VERSION];
+  $dl = [];
+  foreach (['AlagamySetup.exe', 'Alagamy.apk'] as $f) {
+    $path = _site_root() . '/download/' . $f;
+    $dl[$f] = is_file($path) ? date('Y-m-d H:i', (int)filemtime($path)) : null;
+  }
+  return ['version' => _version(), 'php' => PHP_VERSION, 'downloads' => $dl];
+};
+
+// ملفات برنامج الكمبيوتر والموبايل بتتحفظ على الموقع نفسه في فولدر download/
+const DOWNLOADS = [
+  'AlagamySetup.exe' => 5000000,
+  'Alagamy.apk' => 1000000,
+];
+const RELEASE_BASE = 'https://github.com/engatoo-art/alagamy/releases/download/latest/';
+
+/** بينزّل ملف كبير على الديسك مباشرة (من غير ما يتحمل كله في الذاكرة)، ويستبدل القديم بس لو الجديد سليم */
+function _fetch_to_file(string $url, string $dest, int $minSize): int {
+  $tmp = $dest . '.part';
+  $ok = false;
+  if (function_exists('curl_init')) {
+    $fh = fopen($tmp, 'wb');
+    if (!$fh) fail('مش قادر أكتب في فولدر التحميل');
+    $c = curl_init($url);
+    curl_setopt_array($c, [CURLOPT_FOLLOWLOCATION => 1, CURLOPT_FILE => $fh, CURLOPT_TIMEOUT => 600,
+      CURLOPT_CONNECTTIMEOUT => 30, CURLOPT_USERAGENT => 'alagamy-update', CURLOPT_FAILONERROR => 1]);
+    $ok = curl_exec($c) !== false;
+    fclose($fh);
+  } elseif (ini_get('allow_url_fopen')) {
+    $in = @fopen($url, 'rb', false, stream_context_create(['http' => ['follow_location' => 1, 'timeout' => 600]]));
+    if ($in) { $ok = @file_put_contents($tmp, $in) !== false; fclose($in); }
+  }
+  clearstatcache(true, $tmp);
+  $size = is_file($tmp) ? (int)filesize($tmp) : 0;
+  if (!$ok || $size < $minSize) { @unlink($tmp); fail('مش قادر أنزّل ' . basename($dest) . ' من GitHub — حاول تاني بعد شوية'); }
+  rename($tmp, $dest);
+  return $size;
+}
+
+$FN['update_downloads'] = function (array $p) {
+  _need_admin();
+  @set_time_limit(900);
+  @ignore_user_abort(true);
+  $dir = _site_root() . '/download';
+  if (!is_dir($dir)) @mkdir($dir, 0755, true);
+  $out = [];
+  foreach (DOWNLOADS as $name => $min) {
+    $out[$name] = round(_fetch_to_file(RELEASE_BASE . $name, "$dir/$name", $min) / 1048576, 1);
+  }
+  return ['ok' => true, 'files' => $out];
 };
 
 $FN['self_update'] = function (array $p) {

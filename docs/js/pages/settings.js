@@ -219,15 +219,30 @@ async function users(app, body, query) {
 // نسخة الاستضافة: تحديث البرنامج لآخر نسخة بضغطة واحدة
 async function update(app, body) {
   const v = await api.rpc('app_version');
+  const dl = v.downloads || {};
+  const dlPage = new URL('download/', location.href.split('#')[0]).href;
   body.innerHTML = `<div class="panel"><div class="pb grid" style="max-width:640px">
     <div>النسخة الحالية: <b class="num">${esc(v.version || 'غير معروفة')}</b> <span class="muted small">— PHP ${esc(v.php)}</span></div>
     <p class="muted" style="margin:0">لما أبعتلك إن فيه تعديل جديد، دوس الزرار ده والبرنامج هيتحدث لوحده من غير ما بياناتك تتأثر.
       بعد التحديث كل الأجهزة هتاخد النسخة الجديدة أول ما تتفتح.</p>
     <div><button class="btn primary lg" id="upd">${icon('download')} حدّث البرنامج لآخر نسخة</button></div>
+  </div></div>
+  <div class="panel" style="margin-top:14px"><div class="pb grid" style="max-width:640px">
+    <h2>تحميل برنامج الكمبيوتر والموبايل</h2>
+    <p class="muted" style="margin:0">ابعت اللينك ده لأي حد عايز يسطّب البرنامج — كل الملفات على موقعك:</p>
+    <div dir="ltr" style="text-align:left;font-weight:600"><a href="${esc(dlPage)}" target="_blank" rel="noopener">${esc(dlPage)}</a></div>
+    <div class="small">برنامج الكمبيوتر: <b>${dl['AlagamySetup.exe'] ? 'موجود — ' + esc(dl['AlagamySetup.exe']) : 'لسه مش متنزّل'}</b><br>
+      تطبيق الموبايل: <b>${dl['Alagamy.apk'] ? 'موجود — ' + esc(dl['Alagamy.apk']) : 'لسه مش متنزّل'}</b></div>
+    <div><button class="btn lg" id="dlu">${icon('download')} حدّث ملفات التحميل</button></div>
   </div></div>`;
   body.querySelector('#upd').onclick = (e) => busy(e.currentTarget, async () => {
     const r = await api.rpc('self_update');
     ok(`اتحدث البرنامج (${r.files} ملف) — النسخة ${r.version}`);
+    setTimeout(() => location.reload(), 1200);
+  });
+  body.querySelector('#dlu').onclick = (e) => busy(e.currentTarget, async () => {
+    await api.rpc('update_downloads');
+    ok('ملفات التحميل اتحدثت');
     setTimeout(() => location.reload(), 1200);
   });
 }
