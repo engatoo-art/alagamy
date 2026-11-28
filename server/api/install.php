@@ -13,7 +13,11 @@ $msg = ''; $ok = false; $done = [];
 
 function h($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
-$https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') || getenv('ALAGAMY_ALLOW_HTTP');
+$realHttps = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+// على نفس الجهاز (localhost) كلمة السر مش بتخرج برا الجهاز، فمسموح من غير https
+$isLocal = in_array($_SERVER['REMOTE_ADDR'] ?? '', ['127.0.0.1', '::1'], true)
+  && in_array(strtolower(preg_replace('/:\d+$/', '', $_SERVER['HTTP_HOST'] ?? '')), ['localhost', '127.0.0.1', '[::1]'], true);
+$https = $realHttps || $isLocal || getenv('ALAGAMY_ALLOW_HTTP');
 $phpOk = version_compare(PHP_VERSION, '8.0.0', '>=');
 $extOk = extension_loaded('pdo_mysql');
 
@@ -86,7 +90,7 @@ if (file_exists($lock)) {
     file_put_contents($lock, date('c'));
     // SSL شغال (التسطيب نفسه جاي على https) — نخلي الموقع كله يتحول لـ https
     $ht = dirname(__DIR__) . '/.htaccess';
-    if (!getenv('ALAGAMY_ALLOW_HTTP') && is_file($ht) && is_writable($ht)) {
+    if ($realHttps && !getenv('ALAGAMY_ALLOW_HTTP') && is_file($ht) && is_writable($ht)) {
       $t = (string)file_get_contents($ht);
       $t = preg_replace_callback('/# HTTPS-START\n(.*?)# HTTPS-END/s', fn($m) => "# HTTPS-START\n" . preg_replace('/^(\s*)# /m', '$1', $m[1]) . '# HTTPS-END', $t);
       file_put_contents($ht, $t);
