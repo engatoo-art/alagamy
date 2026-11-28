@@ -373,17 +373,17 @@ if PHP:
     boss3 = new_user("boss3", "مدير تالت", inviter=admin)
     call(admin, "save_user", {"id": boss3, "role": "admin", "active": True})
     expect_error(boss, "save_user", {"id": boss3, "perms": {}}, "صاحب البرنامج بس")
-    newacc = new_user("mona", "منى", inviter=boss)
+    newacc = new_user("salma", "سلمى", inviter=boss)
     call(boss, "save_user", {"id": newacc, "active": True, "perms": {"sales": True}, "role": "accountant"})
     call(admin, "save_user", {"id": boss3, "role": "accountant"})
     assert sql(f"select role from profiles where id = '{boss3}'") == "accountant"
     ok("حساب صاحب البرنامج محمي، والمدير التاني بيعمل محاسبين ويديهم صلاحيات بس ميعدلش على المديرين")
     expect_error(newacc, "save_my_contacts", {"email": "bad"}, "الإيميل")
-    r = call(newacc, "save_my_contacts", {"email": "Mona@Gmail.com", "phone": "0100 111 2222", "whatsapp": ""})
-    assert r["email"] == "mona@gmail.com" and r["phone"] == "01001112222", r
+    r = call(newacc, "save_my_contacts", {"email": "Salma@Gmail.com", "phone": "0100 111 2222", "whatsapp": ""})
+    assert r["email"] == "salma@gmail.com" and r["phone"] == "01001112222", r
     expect_error(newacc, "change_my_password", {"current": "wrong-pass", "password": "mona-new-2026"}, "الحالية غلط")
     call(newacc, "change_my_password", {"current": PASSWORDS[newacc][1], "password": "mona-new-2026"})
-    assert http("login", {"username": "mona", "password": "mona-new-2026"})["token"]
+    assert http("login", {"username": "salma", "password": "mona-new-2026"})["token"]
     ok("كل مستخدم بيعدل الإيميل والموبايل وكلمة السر بتاعته بنفسه (بكلمة السر الحالية)")
 
 print("\nكل الاختبارات نجحت ✔")
