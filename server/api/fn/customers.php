@@ -114,14 +114,43 @@ $FN['add_payment'] = function (array $p) {
   return ['id' => $pid, 'amount' => $amt, 'customer' => $c['name'], 'balance' => _customer_balance($cid), 'date' => today(), 'by' => _uname(uid())];
 };
 
+function _void_payment(array $r, string $reason, string $why = 'حذف'): void {
+  ex('UPDATE customer_payments SET voided = 1 WHERE id = ?', [$r['id']]);
+  _reverse_movements(q("SELECT * FROM cash_movements WHERE ref_type = 'payment' AND ref_id = ?", [$r['id']]),
+    'payment_void', $why . ' تحصيل رقم ' . $r['id'], $reason);
+}
+
+// حذف تحصيل: الفلوس مش بتتجمع، والمبلغ بيرجع على حساب الزبون — بس بيفضل ظاهر إنه اتحذف
 $FN['void_payment'] = function (array $p) {
-  _need('approve');
+  _need_any(['approve', 'collections']);
   lock_all();
   $r = q1('SELECT * FROM customer_payments WHERE id = ?', [_i($p, 'id')]);
-  if (!$r || $r['voided']) fail('الدفعة غير موجودة أو ملغية');
-  ex('UPDATE customer_payments SET voided = 1 WHERE id = ?', [$r['id']]);
-  _cash('out', $r['amount'], 'payment_void', 'إلغاء دفعة رقم ' . $r['id'], '', 'payment', (int)$r['id']);
-  return ['ok' => true];
+  if (!$r || $r['voided']) fail('التحصيل غير موجود أو اتحذف قبل كده');
+  _need_change($r['created_by'], $r['created_at']);
+  if (_t($p, 'reason') === '' && empty($GLOBALS['APPROVED_RUN'])) fail('اكتب سبب الحذف');
+  _void_payment($r, _t($p, 'reason'));
+  $c = qv('SELECT name FROM customers WHERE id = ?', [$r['customer_id']]);
+  _log('void', 'payment', (int)$r['id'], 'حذف تحصيل من ' . $c . ' — ' . fmtn($r['amount']), $r['amount'], _t($p, 'reason'));
+  return ['ok' => true, 'balance' => _customer_balance((int)$r['customer_id'])];
+};
+
+// تعديل مبلغ تحصيل: القديم بيتعلم إنه اتعدل ويتسجل الجديد مكانه
+$FN['edit_payment'] = function (array $p) {
+  _need_any(['approve', 'collections']);
+  lock_all();
+  $r = q1('SELECT * FROM customer_payments WHERE id = ?', [_i($p, 'id')]);
+  if (!$r || $r['voided']) fail('التحصيل غير موجود أو اتحذف قبل كده');
+  _need_change($r['created_by'], $r['created_at']);
+  $amt = r2(_n($p, 'amount'));
+  if ($amt <= 0) fail('اكتب المبلغ');
+  if (_t($p, 'reason') === '') fail('اكتب سبب التعديل');
+  $c = q1('SELECT * FROM customers WHERE id = ?', [$r['customer_id']]);
+  _void_payment($r, 'اتعدل: ' . _t($p, 'reason'), 'تعديل');
+  $notes = has_key($p, 'notes') ? _t($p, 'notes') : $r['notes'];
+  $pid = ins('INSERT INTO customer_payments(pay_date, customer_id, amount, notes, created_by) VALUES (?,?,?,?,?)', [today(), $c['id'], $amt, $notes, uid()]);
+  _cash('in', $amt, 'collection', 'تحصيل من ' . $c['name'] . ($notes !== '' ? ' — ' . $notes : '') . ' (بعد التعديل)', $c['name'], 'payment', $pid);
+  _log('edit', 'payment', $pid, 'تعديل تحصيل من ' . $c['name'] . ' — ' . fmtn($r['amount']) . ' ← ' . fmtn($amt), $amt - $r['amount'], _t($p, 'reason'));
+  return ['ok' => true, 'id' => $pid, 'balance' => _customer_balance((int)$c['id'])];
 };
 
 $FN['return_crates'] = function (array $p) {

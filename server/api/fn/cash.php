@@ -18,13 +18,63 @@ $FN['add_cash'] = function (array $p) {
   return ['id' => $mid, 'balance' => _cash_balance(today()), 'movement' => $m];
 };
 
+// حذف وتعديل حركة فلوس اتسجلت بإيد (تحصيل بمسمى أو خارج)
+function _manual_mv(int $id): array {
+  $m = q1('SELECT * FROM cash_movements WHERE id = ?', [$id]);
+  if (!$m) fail('الحركة غير موجودة');
+  if ((int)$m['voided'] !== 0) fail('الحركة دي اتحذفت أو اتعدلت قبل كده');
+  if ($m['ref_type'] === 'payment') fail('ده تحصيل من زبون — اعدله من التحصيل');
+  if ($m['ref_type'] !== 'manual') fail('الحركة دي بتتعدل من مكانها (الفاتورة أو العهدة)');
+  _need_change($m['created_by'], $m['created_at']);
+  return $m;
+}
+$FN['void_cash'] = function (array $p) {
+  _need_any(['approve', 'cash']);
+  lock_all();
+  $m = _manual_mv((int)_i($p, 'id'));
+  if (_t($p, 'reason') === '') fail('اكتب سبب الحذف');
+  _reverse_movements([$m], 'cash_void', 'حذف: ' . $m['description'], _t($p, 'reason'));
+  _log('void', $m['direction'] === 'in' ? 'cash_in' : 'cash_out', (int)$m['id'],
+    ($m['direction'] === 'in' ? 'حذف تحصيل: ' : 'حذف مصروف: ') . $m['description'] . ($m['party'] !== '' ? ' — ' . $m['party'] : ''), $m['amount'], _t($p, 'reason'));
+  return ['ok' => true];
+};
+$FN['edit_cash'] = function (array $p) {
+  _need_any(['approve', 'cash']);
+  lock_all();
+  $m = _manual_mv((int)_i($p, 'id'));
+  $amt = r2(_n($p, 'amount', $m['amount']));
+  $cat = _t($p, 'category') !== '' ? _t($p, 'category') : $m['category'];
+  $ok = $m['direction'] === 'in' ? ['funding', 'other_in'] : ['transport', 'bill', 'withdrawal', 'salary', 'other_out'];
+  if (!in_array($cat, $ok, true)) fail('النوع غير صحيح');
+  if ($amt <= 0) fail('اكتب المبلغ');
+  $descr = has_key($p, 'description') ? _t($p, 'description') : $m['description'];
+  if ($descr === '') fail('اكتب البيان');
+  $party = has_key($p, 'party') ? _t($p, 'party') : $m['party'];
+  if (_t($p, 'reason') === '') fail('اكتب سبب التعديل');
+  _reverse_movements([$m], 'cash_void', 'تعديل: ' . $m['description'], 'اتعدل: ' . _t($p, 'reason'));
+  $nid = ins("INSERT INTO cash_movements(mv_date, direction, amount, category, description, party, ref_type, created_by, shift_id) VALUES (?,?,?,?,?,?,'manual',?,?)",
+    [today(), $m['direction'], $amt, $cat, $descr, $party, uid(), _open_shift_for_me()]);
+  $chg = [];
+  if (abs($amt - $m['amount']) > 0.004) $chg[] = 'المبلغ ' . fmtn($m['amount']) . ' ← ' . fmtn($amt);
+  if ($descr !== $m['description']) $chg[] = 'البيان "' . $m['description'] . '" ← "' . $descr . '"';
+  if ($party !== $m['party']) $chg[] = 'الاسم "' . $m['party'] . '" ← "' . $party . '"';
+  if ($cat !== $m['category']) $chg[] = 'النوع اتغير';
+  _log('edit', $m['direction'] === 'in' ? 'cash_in' : 'cash_out', $nid,
+    ($m['direction'] === 'in' ? 'تعديل تحصيل: ' : 'تعديل مصروف: ') . $descr . ($chg ? ' — ' . implode('، ', $chg) : ''), $amt - $m['amount'], _t($p, 'reason'));
+  return ['ok' => true, 'id' => $nid];
+};
+
 function _by_category(string $where, array $args): array {
-  return q("SELECT direction, category, SUM(amount) total, COUNT(*) count FROM cash_movements WHERE $where GROUP BY direction, category ORDER BY direction, total DESC", $args);
+  return q("SELECT direction, category, SUM(amount) total, COUNT(*) count FROM cash_movements WHERE ($where) AND voided <> 1 GROUP BY direction, category ORDER BY direction, total DESC", $args);
 }
 function _movements(string $where, array $args, bool $party = true): array {
   $rows = q("SELECT m.id, m.mv_date AS date, DATE_FORMAT(m.created_at, '%H:%i') AS time, m.direction, m.amount, m.category, m.description,
-      m.party, m.ref_type, m.ref_id, m.created_by FROM cash_movements m WHERE $where ORDER BY m.created_at, m.id", $args);
-  foreach ($rows as &$r) { $r['by'] = _uname($r['created_by']); unset($r['created_by']); if (!$party) unset($r['party']); }
+      m.party, m.ref_type, m.ref_id, m.created_by, m.created_at, m.voided, m.voided_by, m.void_reason FROM cash_movements m WHERE $where ORDER BY m.created_at, m.id", $args);
+  foreach ($rows as &$r) {
+    $r['by'] = _uname($r['created_by']); $r['voided_by_name'] = _uname($r['voided_by']);
+    $r['can_change'] = (int)$r['voided'] === 0 && in_array($r['ref_type'], ['manual', 'payment'], true) && _can_change($r['created_by'], $r['created_at']);
+    unset($r['created_by'], $r['voided_by'], $r['created_at']); if (!$party) unset($r['party']);
+  }
   return $rows;
 }
 
@@ -35,8 +85,8 @@ $FN['cash_day'] = function (array $p) {
     'from' => $d1, 'to' => $d2,
     'opening' => _cash_balance(date('Y-m-d', strtotime($d1 . ' -1 day'))),
     'closing' => _cash_balance($d2),
-    'total_in' => (float)qv("SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE direction = 'in' AND mv_date BETWEEN ? AND ?", [$d1, $d2]),
-    'total_out' => (float)qv("SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE direction = 'out' AND mv_date BETWEEN ? AND ?", [$d1, $d2]),
+    'total_in' => (float)qv("SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE direction = 'in' AND voided <> 1 AND mv_date BETWEEN ? AND ?", [$d1, $d2]),
+    'total_out' => (float)qv("SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE direction = 'out' AND voided <> 1 AND mv_date BETWEEN ? AND ?", [$d1, $d2]),
     'by_category' => _by_category('mv_date BETWEEN ? AND ?', [$d1, $d2]),
     'movements' => _movements('m.mv_date BETWEEN ? AND ?', [$d1, $d2]),
   ];
@@ -48,11 +98,12 @@ function _shift_json(?int $sid): ?array {
   if (!$sh) return null;
   $agg = q1("SELECT COALESCE(SUM(CASE WHEN direction = 'in' AND category <> 'shift_over' THEN amount END), 0) li,
                     COALESCE(SUM(CASE WHEN direction = 'out' AND category <> 'shift_short' THEN amount END), 0) lo, COUNT(*) c
-             FROM cash_movements WHERE shift_id = ?", [$sid]);
+             FROM cash_movements WHERE shift_id = ? AND voided <> 1", [$sid]);
   return $sh + [
     'user_name' => _uname($sh['user_id']), 'closed_by_name' => _uname($sh['closed_by']),
     'prev_user_name' => _uname($sh['prev_user_id']), 'reset_by_name' => _uname($sh['reset_by']),
     'live_in' => (float)$agg['li'], 'live_out' => (float)$agg['lo'], 'count' => (int)$agg['c'],
+    'changes' => (int)qv('SELECT COUNT(*) FROM cash_movements WHERE shift_id = ? AND voided <> 0', [$sid]),
   ];
 }
 
@@ -118,7 +169,7 @@ $FN['close_shift'] = function (array $p) {
   if (!$sh) fail('مفيش عهدة مفتوحة');
   if ($sh['user_id'] !== uid() && !_has('approve')) fail('العهدة دي باسم ' . _uname($sh['user_id']) . ' — هو أو المدير بس اللي يقفلها');
   $t = q1("SELECT COALESCE(SUM(CASE WHEN direction = 'in' THEN amount END), 0) tin, COALESCE(SUM(CASE WHEN direction = 'out' THEN amount END), 0) tout
-           FROM cash_movements WHERE shift_id = ?", [$sh['id']]);
+           FROM cash_movements WHERE shift_id = ? AND voided <> 1", [$sh['id']]);
   $expected = r2($sh['opening_amount'] + $t['tin'] - $t['tout']);
   $counted = _t($p, 'counted') === '' ? $expected : r2(_n($p, 'counted'));
   if ($counted < 0) fail('المبلغ الفعلي مينفعش يبقى بالسالب');

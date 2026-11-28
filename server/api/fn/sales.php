@@ -15,6 +15,9 @@ function _get_sale(array $p): array {
     'customer' => $c,
     'customer_display' => $c['name'] ?? ($s['customer_name'] !== '' ? $s['customer_name'] : 'زبون نقدي'),
     'created_by_name' => _uname($s['created_by']),
+    'can_change' => _can_change($s['created_by'], $s['created_at']),
+    'voided_by_name' => _uname($s['voided_by']),
+    'changes' => q('SELECT action, summary, reason, at, user_id FROM activity_log WHERE target = ? AND target_id = ? ORDER BY id', ['sale', $s['id']]),
     'balance' => $s['customer_id'] ? _customer_balance((int)$s['customer_id']) : null,
     'lines' => q('SELECT l.id, i.name AS item, l.unit, l.qty, l.weight, l.price, l.amount, ct.name AS crate, l.crates,
         l.deposit_unit, l.deposit_amount, su.name AS supplier
@@ -134,24 +137,32 @@ function _sale_in_settled(int $sid): bool {
     JOIN shipments sh ON sh.id = si.shipment_id WHERE l.sale_id = ? AND sh.settlement_id IS NOT NULL LIMIT 1', [$sid]);
 }
 
+// حذف فاتورة: مش بتتجمع في المبيعات ولا الفلوس، البضاعة بترجع للنقلة، والآجل بيتشال من على الزبون — بس بتفضل ظاهرة إنها اتحذفت
 $FN['void_sale'] = function (array $p) {
-  _need('approve');
+  _need_any(['approve', 'sales']);
   lock_all();
   $s = q1('SELECT * FROM sales WHERE id = ?', [_i($p, 'id')]);
   if (!$s) fail('الفاتورة غير موجودة');
-  if ($s['voided']) fail('الفاتورة ملغية بالفعل');
-  if (_sale_in_settled((int)$s['id'])) fail('مينفعش تلغي الفاتورة دي لأن النقلة بتاعتها اتعملها تصفية');
+  if ($s['voided']) fail('الفاتورة اتحذفت بالفعل');
+  _need_change($s['created_by'], $s['created_at']);
+  if (_sale_in_settled((int)$s['id'])) fail('مينفعش تحذف الفاتورة دي لأن النقلة بتاعتها اتعملها تصفية (فاتورة مورد)');
+  if (_t($p, 'reason') === '' && empty($GLOBALS['APPROVED_RUN'])) fail('اكتب سبب الحذف');
   ex('UPDATE sales SET voided = 1, voided_by = ?, voided_at = NOW(6), void_reason = ? WHERE id = ?', [uid(), _t($p, 'reason'), $s['id']]);
-  _cash('out', $s['paid_amount'], 'sale_void', 'إلغاء فاتورة رقم ' . $s['sale_no'], '', 'sale', (int)$s['id']);
+  _reverse_movements(q("SELECT * FROM cash_movements WHERE ref_type = 'sale' AND ref_id = ?", [$s['id']]),
+    'sale_void', 'حذف فاتورة رقم ' . $s['sale_no'], _t($p, 'reason'));
+  $cname = $s['customer_id'] ? qv('SELECT name FROM customers WHERE id = ?', [$s['customer_id']]) : ($s['customer_name'] ?: 'زبون نقدي');
+  _log('void', 'sale', (int)$s['id'], 'حذف فاتورة رقم ' . $s['sale_no'] . ' — ' . $cname . ' (' . ($s['payment_type'] === 'cash' ? 'نقدي' : 'آجل') . ')', $s['grand_total'], _t($p, 'reason'));
   return ['ok' => true];
 };
 
 $FN['edit_sale'] = function (array $p) {
-  _need('approve');
+  _need_any(['approve', 'sales']);
   lock_all();
   $s = q1('SELECT * FROM sales WHERE id = ?', [_i($p, 'id')]);
   if (!$s) fail('الفاتورة غير موجودة');
-  if ($s['voided']) fail('الفاتورة دي ملغية');
+  if ($s['voided']) fail('الفاتورة دي اتحذفت');
+  _need_change($s['created_by'], $s['created_at']);
+  $before = q('SELECT l.id, i.name item, l.qty, l.weight, l.price FROM sale_lines l JOIN items i ON i.id = l.item_id WHERE l.sale_id = ?', [$s['id']]);
   if (_sale_in_settled((int)$s['id'])) fail('مينفعش تتعدل لأن النقلة بتاعتها اتعملها فاتورة مورد');
   foreach ((is_array($p['lines'] ?? null) ? $p['lines'] : []) as $ln) {
     $l = q1('SELECT * FROM sale_lines WHERE id = ? AND sale_id = ?', [_i($ln, 'id'), $s['id']]);
@@ -173,6 +184,17 @@ $FN['edit_sale'] = function (array $p) {
   $delta = r2($newpaid - $s['paid_amount']);
   $note = trim($s['notes'] . (_t($p, 'reason') !== '' ? ' | تعديل: ' . _t($p, 'reason') : ' | اتعدلت'));
   ex('UPDATE sales SET goods_total = ?, grand_total = ?, paid_amount = ?, notes = ? WHERE id = ?', [r2($goods), $grand, $newpaid, mb_substr($note, 0, 1000), $s['id']]);
+  $diffs = [];
+  foreach ($before as $b) {
+    $a = q1('SELECT qty, weight, price FROM sale_lines WHERE id = ?', [$b['id']]);
+    $d = [];
+    if (abs($a['qty'] - $b['qty']) > 1e-9) $d[] = 'العدد ' . fmtn($b['qty']) . ' ← ' . fmtn($a['qty']);
+    if (abs($a['weight'] - $b['weight']) > 1e-9) $d[] = 'الوزن ' . fmtn($b['weight']) . ' ← ' . fmtn($a['weight']);
+    if (abs($a['price'] - $b['price']) > 1e-9) $d[] = 'السعر ' . fmtn($b['price']) . ' ← ' . fmtn($a['price']);
+    if ($d) $diffs[] = $b['item'] . ': ' . implode('، ', $d);
+  }
+  _log('edit', 'sale', (int)$s['id'], 'تعديل فاتورة رقم ' . $s['sale_no'] . ($diffs ? ' — ' . implode(' | ', $diffs) : '') . ' — الإجمالي ' . fmtn($s['grand_total']) . ' ← ' . fmtn($grand),
+    $grand - $s['grand_total'], _t($p, 'reason'));
   if ($delta > 0) _cash('in', $delta, 'sale_edit', 'فرق تعديل فاتورة رقم ' . $s['sale_no'], '', 'sale', (int)$s['id']);
   elseif ($delta < 0) _cash('out', -$delta, 'sale_edit', 'فرق تعديل فاتورة رقم ' . $s['sale_no'], '', 'sale', (int)$s['id']);
   return _get_sale(['id' => $s['id']]);
@@ -236,5 +258,6 @@ $FN['stock_adjust'] = function (array $p) {
   } else {
     ex('UPDATE shipment_items SET qty = ? WHERE id = ?', [$newq, $si['id']]);
   }
+  _log('edit', 'stock', (int)$si['id'], 'تعديل مخزون ' . (qv('SELECT name FROM items WHERE id = ?', [$si['item_id']]) ?? '') . ' في نقلة رقم ' . $si['shipment_id'] . ' — ' . fmtn($si['qty']) . ' ← ' . fmtn($newq), 0, _t($p, 'reason'));
   return ['ok' => true, 'qty' => $newq, 'sold' => $sold];
 };

@@ -124,6 +124,7 @@ $FN['delete_shipment'] = function (array $p) {
     if (_shipitem_sold((int)$si['id']) > 0) fail('النقلة دي اتباع منها ومينفعش تتمسح');
   }
   ex('DELETE FROM shipments WHERE id = ?', [$sh['id']]);
+  _log('void', 'shipment', (int)$sh['id'], 'حذف نقلة رقم ' . $sh['id'] . ' — ' . (qv('SELECT name FROM suppliers WHERE id = ?', [$sh['supplier_id']]) ?? ''), 0, _t($p, 'reason'));
   return ['ok' => true];
 };
 

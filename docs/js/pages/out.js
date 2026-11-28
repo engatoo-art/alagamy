@@ -2,6 +2,7 @@
 import { api } from '../api.js';
 import { esc, money, moneyT, n, icon, ok, err, busy, formData, todayISO, dateLong, dateT, emptyState, CASH_CAT, moneyView } from '../ui.js';
 import { moneyDoc } from '../print.js';
+import { moneyTable, bindMoneyRows } from './moneyrows.js';
 
 const OUT_CATS = ['transport', 'bill', 'salary', 'withdrawal', 'other_out'];
 
@@ -55,13 +56,8 @@ export async function render({ app, el, query }) {
     el.querySelector('#sum').innerHTML = `<div class="ph"><h2>الإجمالي</h2><span class="muted small">${period}</span></div><div class="pb">
       <div class="grand num t-out" style="margin-bottom:10px">${moneyT(data.total)}</div>
       ${data.by_category.map((x) => `<div class="totals"><div class="line"><span>${CASH_CAT[x.category] || x.category} <span class="muted small">(${x.count})</span></span><b>${money(x.total)}</b></div></div>`).join('') || '<span class="muted">لسه مفيش</span>'}</div>`;
-    el.querySelector('#list').innerHTML = data.movements.length ? `<div class="tbl-wrap"><table class="t">
-      <thead><tr>${from === to ? '' : '<th>التاريخ</th>'}<th>الوقت</th><th>النوع</th><th>البيان</th><th>لمين</th><th class="n">المبلغ</th><th>بواسطة</th></tr></thead>
-      <tbody>${data.movements.map((x) => `<tr>${from === to ? '' : `<td>${dateT(x.date)}</td>`}<td class="muted">${x.time}</td>
-        <td>${CASH_CAT[x.category] || x.category}</td><td>${esc(x.description)}</td><td>${esc(x.party || '')}</td>
-        <td class="n t-out"><b>${money(x.amount)}</b></td><td class="small muted">${esc(x.by || '')}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="${from === to ? 4 : 5}">الإجمالي (${data.count})</td><td class="n">${money(data.total)}</td><td></td></tr></tfoot></table></div>`
-      : emptyState('مفيش فلوس خرجت في الفترة دي', '');
+    el.querySelector('#list').innerHTML = moneyTable(data, { from, to, dir: 'out', empty: 'مفيش فلوس خرجت في الفترة دي' });
+    bindMoneyRows(el.querySelector('#list'), data, load);
   };
   const f = el.querySelector('#f'), t = el.querySelector('#t');
   f.onchange = t.onchange = () => { from = f.value || todayISO(); to = t.value || from; load().catch(err); };

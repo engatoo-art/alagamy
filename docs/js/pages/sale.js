@@ -283,7 +283,7 @@ export async function renderNew({ app, el, query }) {
 // ======================= قايمة الفواتير =======================
 export async function renderList({ app, el, query }) {
   const t = todayISO();
-  const F = { from: query.from || t, to: query.to || t, payment_type: 'all', search: '', include_voided: false };
+  const F = { from: query.from || t, to: query.to || t, payment_type: 'all', search: '', include_voided: true };
   el.innerHTML = `
   <div class="page-head"><h1>الفواتير</h1>${app.can('sales') ? `<a class="btn primary" href="#/sale">${icon('plus')} بيع جديد</a>` : ''}</div>
   <div class="panel"><div class="pb row" style="align-items:flex-end">
@@ -291,7 +291,7 @@ export async function renderList({ app, el, query }) {
     <label class="f">إلى<input class="in" type="date" name="to" value="${F.to}"></label>
     <label class="f">الدفع<select class="in" name="payment_type"><option value="all">الكل</option><option value="cash">نقدي</option><option value="credit">آجل</option></select></label>
     <label class="f" style="flex:1;min-width:180px">بحث<input class="in" name="search" placeholder="رقم الفاتورة أو اسم الزبون"></label>
-    <label class="check"><input type="checkbox" name="include_voided"> الملغية كمان</label>
+    <label class="check"><input type="checkbox" name="include_voided" checked> اعرض المحذوفة كمان</label>
   </div></div>
   <div class="panel" id="res"></div>`;
   const res = el.querySelector('#res');
@@ -305,9 +305,9 @@ export async function renderList({ app, el, query }) {
       <tbody>${rows.map((r) => `<tr class="click ${r.voided ? 'void' : ''}" data-id="${r.id}"><td class="num">${r.sale_no}</td>
         <td>${date(r.date)} <span class="muted small">${r.time}</span></td><td>${esc(r.customer)}</td>
         <td class="small muted" style="max-width:240px">${esc(r.items || '')}</td>
-        <td>${tag(r.payment_type, PAY[r.payment_type])} ${r.voided ? tag('void', 'ملغية') : statusTag(r.approval_status)}</td>
+        <td>${tag(r.payment_type, PAY[r.payment_type])} ${r.voided ? `<span class="vnote">${tag('void', 'اتحذفت')}</span>` : statusTag(r.approval_status)}</td>
         <td class="n">${money(r.grand_total)}</td><td class="n">${money(r.paid_amount)}</td><td class="small muted">${esc(r.by || '')}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="5">${live.length} فاتورة</td><td class="n">${money(sum('grand_total'))}</td><td class="n">${money(sum('paid_amount'))}</td><td></td></tr></tfoot></table></div>`
+      <tfoot><tr><td colspan="5">${live.length} فاتورة${rows.length > live.length ? ` <span class="small muted">— و${rows.length - live.length} اتحذفت ومش محسوبة</span>` : ''}</td><td class="n">${money(sum('grand_total'))}</td><td class="n">${money(sum('paid_amount'))}</td><td></td></tr></tfoot></table></div>`
       : emptyState('مفيش فواتير في الفترة دي', 'غيّر التاريخ أو البحث');
     res.querySelectorAll('[data-id]').forEach((r) => r.onclick = () => app.go('#/sales/' + r.dataset.id));
   };
@@ -323,9 +323,11 @@ export async function renderView({ app, el, params }) {
   el.innerHTML = `
   <div class="page-head"><h1>فاتورة رقم <span class="num">${s.sale_no}</span></h1>
     <button class="btn primary" data-p="80mm">${icon('print')} إيصال</button><button class="btn" data-p="A4">طباعة A4</button>
-    ${app.can('sales') && !s.voided ? `<button class="btn" data-edit>${icon('edit')} تعديل الأسعار</button><button class="btn danger" data-void>${icon('trash')} إلغاء الفاتورة</button>` : ''}
+    ${(app.can('sales') || app.can('approve')) && !s.voided ? `<button class="btn" data-edit>${icon('edit')} تعديل الفاتورة</button><button class="btn danger" data-void>${icon('trash')} حذف الفاتورة</button>` : ''}
     <div class="sub">${date(s.sale_date)} — ${esc(d.created_by_name || '')}</div></div>
-  ${s.voided ? `<div class="alert err" style="margin-bottom:14px">الفاتورة دي ملغية${s.void_reason ? ': ' + esc(s.void_reason) : ''}</div>` : ''}
+  ${s.voided ? `<div class="alert err" style="margin-bottom:14px"><b>الفاتورة دي اتحذفت</b>${d.voided_by_name ? ' — حذفها ' + esc(d.voided_by_name) : ''}${s.void_reason ? '، السبب: ' + esc(s.void_reason) : ''}.
+      مش محسوبة في المبيعات ولا الفلوس، والبضاعة رجعت للنقلة${s.payment_type === 'credit' ? '، ومش متسجلة آجل على الزبون' : ''}.</div>` : ''}
+  ${(d.changes || []).filter((c) => c.action === 'edit').map((c) => `<div class="alert warn" style="margin-bottom:10px"><b>الفاتورة دي اتعدلت</b> — ${esc(c.summary)}${c.reason ? '، السبب: ' + esc(c.reason) : ''}</div>`).join('')}
   ${s.approval_status === 'pending' && !s.voided ? `<div class="alert warn" style="margin-bottom:14px">الفاتورة الآجل دي مستنية موافقة المدير</div>` : ''}
   <div class="panel"><div class="ph"><h2>${esc(d.customer_display)}</h2>${tag(s.payment_type, PAY[s.payment_type])}
     ${s.customer_id ? `<a class="btn sm" href="#/customers/${s.customer_id}">كشف الحساب</a>` : ''}</div>
@@ -347,12 +349,14 @@ export async function renderView({ app, el, params }) {
   const reload = () => app.go('#/sales/' + s.id + '?r=' + Date.now());
   const v = el.querySelector('[data-void]');
   if (v) v.onclick = async () => {
-    if (app.can('approve')) {
-      const reason = await promptBox('سبب الإلغاء', { title: 'إلغاء الفاتورة', yes: 'إلغاء الفاتورة', danger: true });
+    if (d.can_change) {
+      const reason = await promptBox(`الفاتورة هتفضل ظاهرة إنها اتحذفت، بس مش هتتحسب في الفلوس ولا البضاعة${s.payment_type === 'credit' ? ' ولا هتبقى آجل على الزبون' : ''}.<br>سبب الحذف:`,
+        { title: 'حذف الفاتورة', yes: 'احذف الفاتورة', danger: true, placeholder: 'مثلاً: الزبون رجع وقال مش محتاجها' });
       if (reason === null) return;
       return busy(v, async () => {
+        if (!reason) throw new Error('اكتب سبب الحذف');
         await api.rpc('void_sale', { id: s.id, reason });
-        ok('الفاتورة اتلغت' + (n(s.paid_amount) ? ' والمبلغ اتخصم من العهدة' : ''));
+        ok('الفاتورة اتحذفت' + (n(s.paid_amount) ? ' والمبلغ مش محسوب في العهدة' : ''));
         reload();
       });
     }
@@ -371,8 +375,9 @@ export async function renderView({ app, el, params }) {
           <td><input class="in" data-f="price" type="number" min="0" step="0.01" value="${n(l.price)}" style="width:100px"></td>
           <td class="n" data-a>${moneyT(l.amount)}</td></tr>`).join('')}</tbody></table>
         <div class="alert info" id="tot" style="margin-top:12px"></div>
-        ${app.can('approve') ? '' : '<div class="alert warn" style="margin-top:8px">التعديل هيتبعت للمدير ومش هيتنفذ غير لما يوافق.</div>'}`,
-      actions: `<button class="btn primary" data-ok>${app.can('approve') ? 'حفظ التعديل' : 'ابعت للمدير'}</button><button class="btn" data-close>رجوع</button>`,
+        <label class="f" style="margin-top:10px">سبب التعديل<input class="in" id="why" placeholder="مثلاً: السعر اتكتب غلط"></label>
+        ${d.can_change ? '<div class="alert info" style="margin-top:8px">التعديل هيبان على الفاتورة وفي سجل التعديلات.</div>' : '<div class="alert warn" style="margin-top:8px">الفاتورة دي مش من عهدتك المفتوحة، فالتعديل هيتبعت للمدير ومش هيتنفذ غير لما يوافق.</div>'}`,
+      actions: `<button class="btn primary" data-ok>${d.can_change ? 'حفظ التعديل' : 'ابعت للمدير'}</button><button class="btn" data-close>رجوع</button>`,
     });
     const rows = () => m.$$('tr[data-l]').map((tr) => ({
       id: +tr.dataset.l, unit: tr.dataset.u,
@@ -391,8 +396,10 @@ export async function renderView({ app, el, params }) {
     m.el.addEventListener('input', upd); upd();
     m.$('[data-ok]').onclick = () => busy(m.$('[data-ok]'), async () => {
       const lines = rows().map(({ id, qty: q, weight, price }) => ({ id, qty: q, weight, price }));
-      if (app.can('approve')) {
-        await api.rpc('edit_sale', { id: s.id, lines });
+      const why = m.$('#why').value.trim();
+      if (d.can_change) {
+        if (!why) throw new Error('اكتب سبب التعديل');
+        await api.rpc('edit_sale', { id: s.id, lines, reason: why });
         ok('اتعدلت الفاتورة'); m.close(); reload();
       } else {
         m.close();

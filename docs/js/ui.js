@@ -48,25 +48,45 @@ export const STATUS = {
 export const CASH_CAT = {
   sale: 'بيع نقدي', collection: 'تحصيل من زبون', funding: 'تمويل الدرج', other_in: 'وارد آخر',
   crate_refund: 'رد رهن صناديق', supplier_payment: 'صرف لمورد', transport: 'أجرة نقل', bill: 'فاتورة / مصروفات',
-  salary: 'يوميات وأجور', withdrawal: 'سحب من الدرج', other_out: 'مصروف آخر', sale_void: 'إلغاء فاتورة', payment_void: 'إلغاء دفعة',
+  salary: 'يوميات وأجور', withdrawal: 'سحب من الدرج', other_out: 'مصروف آخر', sale_void: 'حذف فاتورة', payment_void: 'حذف تحصيل', cash_void: 'تصحيح (حذف أو تعديل)',
   shift_short: 'عجز في العهدة', shift_over: 'زيادة في العهدة', sale_edit: 'تعديل فاتورة', supplier_advance: 'مقدم لعميل (عهدة)', advance_return: 'رجوع مقدم من عميل', drawer_reset: 'تصفير الدرج (المدير)',
 };
 // التحصيل = أي فلوس داخلة بمسمى (آجل قديم، تمويل، وارد آخر، رجوع مقدم) — مش البيع النقدي (ده بيبان في العهدة بالتفاصيل)
 export const IN_CATS = ['collection', 'other_in', 'funding', 'advance_return'];
 // العجز والزيادة وتصفير الدرج مش مصروفات — بيبانوا في العهدة والتقارير
 export const OUT_SKIP = ['shift_short', 'shift_over', 'drawer_reset'];
-/** بيفلتر تقرير الفلوس (report_money) ويعيد حساب المجاميع: التحصيل بس، أو الخارج من غير العجز والتصفير */
+// حركات بتتعمل لوحدها لما حاجة تتحذف أو تتعدل — مش بتتجمع في التحصيل ولا الخارج
+export const REVERSAL_CATS = ['sale_void', 'payment_void', 'cash_void', 'sale_edit'];
+/** بيشيل من القايمة "عكس" الحذف اللي في نفس العهدة (الحركة الأصلية بتفضل ظاهرة إنها اتحذفت) */
+export const mvShown = (list) => list.filter((x) => !(REVERSAL_CATS.includes(x.category) && n(x.voided) === 1));
+/** الحركة دي محسوبة في المجاميع؟ */
+export const mvCounted = (x) => n(x.voided) === 0 && !REVERSAL_CATS.includes(x.category);
+/** علامة "اتحذف / اتعدل" جنب الحركة أو الفاتورة، ومعاها مين وليه */
+export function voidTag(x) {
+  const v = n(x.voided);
+  const isEdit = /^اتعدل/.test(x.void_reason || '');
+  if (!v && REVERSAL_CATS.includes(x.category)) return ` <span class="vnote">${tag('pending', 'تصحيح')}</span>`;
+  if (!v) return '';
+  const why = (x.void_reason || '').replace(/^اتعدل:\s*/, '');
+  return ` <span class="vnote">${tag(isEdit ? 'pending' : 'void', isEdit ? 'اتعدل' : (v === 2 ? 'اتحذف بعدين' : 'اتحذف'))}
+    <span class="small muted">${x.voided_by_name ? esc(x.voided_by_name) : ''}${why ? ': ' + esc(why) : ''}</span></span>`;
+}
+/** بيفلتر تقرير الفلوس (report_money) ويعيد حساب المجاميع: التحصيل بس، أو الخارج من غير العجز والتصفير.
+ *  المحذوف والمتعدل بيفضل ظاهر في القايمة بس مش بيتجمع */
 export function moneyView(r, dir) {
-  const keep = dir === 'in' ? (x) => IN_CATS.includes(x.category) : (x) => !OUT_SKIP.includes(x.category);
-  const mv = r.movements.filter(keep);
+  // عكس الحذف (التصحيح) بيبان في العهدة بس، هنا بتبان الحركة الأصلية مكتوب عليها إنها اتحذفت
+  const kind = dir === 'in' ? (x) => IN_CATS.includes(x.category) : (x) => !OUT_SKIP.includes(x.category) && !REVERSAL_CATS.includes(x.category);
+  const all = mvShown(r.movements.filter(kind));
+  const mv = all.filter(mvCounted);
   const grp = (key) => {
     const g = {};
     mv.forEach((x) => { const k = key(x); g[k] = g[k] || { k, count: 0, total: 0 }; g[k].count++; g[k].total += n(x.amount); });
     return Object.values(g);
   };
   return {
-    ...r, direction: dir, movements: mv,
+    ...r, direction: dir, movements: all, counted: mv,
     title: dir === 'in' ? 'التحصيل' : 'الخارج',
+    changed: all.length - mv.length,
     total: mv.reduce((a, x) => a + n(x.amount), 0), count: mv.length,
     by_category: grp((x) => x.category).map((x) => ({ category: x.k, count: x.count, total: x.total })).sort((a, b) => b.total - a.total),
     by_party: grp((x) => x.party || 'بدون اسم').map((x) => ({ party: x.k, count: x.count, total: x.total })).sort((a, b) => b.total - a.total),

@@ -7,7 +7,7 @@ base, user, pw, shots = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 os.makedirs(shots, exist_ok=True)
 routes = ['#/', '#/sale', '#/sales', '#/sales/1', '#/customers', '#/customers/1', '#/crates', '#/suppliers', '#/suppliers/1',
           '#/shipments', '#/shipments/new', '#/shipments/1', '#/settlements', '#/settlements/1', '#/stock', '#/accountants',
-          '#/shifts/1', '#/cash', '#/cash?tab=day', '#/cash?tab=history', '#/in', '#/out', '#/approvals', '#/reports', '#/reports?tab=in',
+          '#/shifts/1', '#/cash', '#/cash?tab=day', '#/cash?tab=history', '#/in', '#/out', '#/approvals', '#/changes', '#/reports', '#/reports?tab=in',
           '#/reports?tab=out', '#/debts', '#/settings', '#/settings?tab=users', '#/settings?tab=backup', '#/settings?tab=crates',
           '#/settings?tab=items', '#/account']
 bad = []

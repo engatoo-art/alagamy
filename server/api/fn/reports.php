@@ -43,9 +43,16 @@ $FN['report_money'] = function (array $p) {
   _need_any(['reports', 'cash', 'collections']);
   $d1 = _d($p, 'from'); $d2 = _d($p, 'to'); $dir = _t($p, 'direction') !== '' ? _t($p, 'direction') : 'in';
   $w = 'direction = ? AND mv_date BETWEEN ? AND ?'; $a = [$dir, $d1, $d2];
-  $mv = q("SELECT m.mv_date AS date, DATE_FORMAT(m.created_at, '%H:%i') AS time, m.amount, m.category, m.description, m.party, m.ref_type, m.ref_id, m.created_by
+  $mv = q("SELECT m.id, m.mv_date AS date, DATE_FORMAT(m.created_at, '%H:%i') AS time, m.amount, m.category, m.description, m.party, m.ref_type, m.ref_id,
+      m.created_by, m.created_at, m.voided, m.voided_by, m.void_reason
     FROM cash_movements m WHERE m.$w ORDER BY m.mv_date, m.created_at", $a);
-  foreach ($mv as &$m) { $m['by'] = _uname($m['created_by']); unset($m['created_by']); }
+  foreach ($mv as &$m) {
+    $m['by'] = _uname($m['created_by']); $m['voided_by_name'] = _uname($m['voided_by']);
+    $m['can_change'] = (int)$m['voided'] === 0 && in_array($m['ref_type'], ['manual', 'payment'], true) && _can_change($m['created_by'], $m['created_at']);
+    unset($m['created_by'], $m['voided_by'], $m['created_at']);
+  }
+  unset($m);
+  $w .= ' AND voided <> 1';
   return ['from' => $d1, 'to' => $d2, 'direction' => $dir, 'movements' => $mv,
     'by_party' => q("SELECT COALESCE(NULLIF(party, ''), 'بدون اسم') party, COUNT(*) count, SUM(amount) total FROM cash_movements WHERE $w GROUP BY 1 ORDER BY total DESC", $a),
     'by_category' => q("SELECT category, COUNT(*) count, SUM(amount) total FROM cash_movements WHERE $w GROUP BY category ORDER BY total DESC", $a),
@@ -83,8 +90,10 @@ $FN['dashboard'] = function (array $p) {
   return [
     'today' => $d, 'sales_count' => (int)$s['n'], 'sales_total' => (float)$s['t'], 'cash_sales' => (float)$s['cash'], 'credit_sales' => (float)$s['credit'],
     'collections' => (float)qv('SELECT COALESCE(SUM(amount), 0) FROM customer_payments WHERE pay_date = ? AND NOT voided', [$d]),
-    'cash_in' => (float)qv("SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE mv_date = ? AND direction = 'in'", [$d]),
-    'cash_out' => (float)qv("SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE mv_date = ? AND direction = 'out'", [$d]),
+    'cash_in' => (float)qv("SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE mv_date = ? AND direction = 'in' AND voided <> 1", [$d]),
+    'cash_out' => (float)qv("SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE mv_date = ? AND direction = 'out' AND voided <> 1", [$d]),
+    'changes_today' => (int)qv('SELECT COUNT(*) FROM activity_log WHERE at >= CURDATE()'),
+    'changes_unseen' => _has('approve') ? (int)qv('SELECT COUNT(*) FROM activity_log WHERE seen_at IS NULL') : 0,
     'cash_balance' => (_has('cash') || _has('reports')) ? _cash_balance($d) : null,
     'total_debts' => r2(array_sum($pos)), 'debtors' => count($pos),
     'open_shipments' => (int)qv('SELECT COUNT(*) FROM shipments WHERE settlement_id IS NULL'),
@@ -108,7 +117,7 @@ $FN['report_period'] = function (array $p) {
   if ($span >= 0 && $span <= 62) {
     $sd = []; foreach (q('SELECT sale_date d, SUM(grand_total) t FROM sales WHERE sale_date BETWEEN ? AND ? AND NOT voided GROUP BY sale_date', [$d1, $d2]) as $r) $sd[$r['d']] = $r['t'];
     $ci = []; $co = [];
-    foreach (q('SELECT mv_date d, direction, SUM(amount) t FROM cash_movements WHERE mv_date BETWEEN ? AND ? GROUP BY mv_date, direction', [$d1, $d2]) as $r) {
+    foreach (q('SELECT mv_date d, direction, SUM(amount) t FROM cash_movements WHERE mv_date BETWEEN ? AND ? AND voided <> 1 GROUP BY mv_date, direction', [$d1, $d2]) as $r) {
       if ($r['direction'] === 'in') $ci[$r['d']] = $r['t']; else $co[$r['d']] = $r['t'];
     }
     $closing = _cash_balance(date('Y-m-d', strtotime("$d1 -1 day")));
@@ -133,7 +142,7 @@ $FN['report_period'] = function (array $p) {
         FROM settlements WHERE status IN ('approved', 'paid') AND DATE(COALESCE(decided_at, created_at)) BETWEEN ? AND ?", [$d1, $d2]),
     'supplier_paid' => (float)qv("SELECT COALESCE(SUM(amount), 0) FROM cash_movements WHERE category = 'supplier_payment' AND mv_date BETWEEN ? AND ?", [$d1, $d2]),
     'cash' => $cash,
-    'expenses' => q("SELECT category, SUM(amount) total FROM cash_movements WHERE direction = 'out' AND category IN ('transport', 'bill', 'salary', 'other_out', 'withdrawal')
+    'expenses' => q("SELECT category, SUM(amount) total FROM cash_movements WHERE direction = 'out' AND voided = 0 AND category IN ('transport', 'bill', 'salary', 'other_out', 'withdrawal')
         AND mv_date BETWEEN ? AND ? GROUP BY category ORDER BY total DESC", [$d1, $d2]),
     'items' => q('SELECT i.name item, SUM(l.qty) qty, SUM(l.weight) weight, SUM(l.amount) amount FROM sale_lines l JOIN sales s ON s.id = l.sale_id
         JOIN items i ON i.id = l.item_id WHERE s.sale_date BETWEEN ? AND ? AND NOT s.voided GROUP BY i.name ORDER BY amount DESC', [$d1, $d2]),

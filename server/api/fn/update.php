@@ -24,6 +24,10 @@ function run_migrations(): void {
   foreach (preg_split('/;\s*\n/', $sql) as $stmt) { if (trim($stmt) !== '') db()->exec($stmt); }
   // أعمدة اتضافت بعد أول نسخة بتتحط هنا: ensure_column('table', 'col', 'col TYPE ...');
   ensure_column('profiles', 'is_owner', 'is_owner TINYINT(1) NOT NULL DEFAULT 0');
+  ensure_column('cash_movements', 'voided', 'voided TINYINT NOT NULL DEFAULT 0');
+  ensure_column('cash_movements', 'voided_by', 'voided_by CHAR(36) NULL');
+  ensure_column('cash_movements', 'voided_at', 'voided_at DATETIME(6) NULL');
+  ensure_column('cash_movements', 'void_reason', "void_reason VARCHAR(1000) NOT NULL DEFAULT ''");
   _ensure_owner();
 }
 

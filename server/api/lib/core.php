@@ -237,6 +237,55 @@ function _cash(string $dir, $amt, string $cat, ?string $descr, ?string $party, ?
     [$d ?? today(), $dir, r2($amt), $cat, $descr ?? '', $party ?? '', $rtype ?? '', $rid, uid(), $sid]);
 }
 
+// ---------------------------------------------------------------- التعديل والحذف
+/** المدير يعدل ويحذف أي حاجة. المحاسب يعدل ويحذف اللي هو عمله بس، وجوه عهدته المفتوحة دلوقتي */
+function _can_change(?string $createdBy, ?string $createdAt): bool {
+  if (_has('approve') || !empty($GLOBALS['APPROVED_RUN'])) return true;
+  if (!$createdBy || $createdBy !== uid()) return false;
+  $sh = q1("SELECT * FROM cash_shifts WHERE status = 'open' AND user_id = ? LIMIT 1", [uid()]);
+  return $sh && $createdAt && strtotime($createdAt) >= strtotime($sh['opened_at']) - 1;
+}
+function _need_change(?string $createdBy, ?string $createdAt): void {
+  if (!_can_change($createdBy, $createdAt)) fail('تقدر تعدل أو تحذف اللي انت عملته في عهدتك المفتوحة بس — غير كده اطلب من المدير');
+}
+
+/** بيسجل أي تعديل أو حذف علشان يبان للمدير وللمحاسبين */
+function _log(string $action, string $target, ?int $tid, string $summary, $amount = 0, string $reason = ''): void {
+  ins('INSERT INTO activity_log(user_id, requested_by, action, target, target_id, summary, amount, reason, seen_by, seen_at) VALUES (?,?,?,?,?,?,?,?,?,?)', [
+    uid(), $GLOBALS['REQ_BY'] ?? null, $action, $target, $tid, mb_substr($summary, 0, 1000), r2((float)$amount), mb_substr($reason, 0, 1000),
+    // اللي بيعمله المدير بنفسه مش محتاج مراجعة، بس بيبان للكل
+    _has('approve') && empty($GLOBALS['REQ_BY']) ? uid() : null, _has('approve') && empty($GLOBALS['REQ_BY']) ? date('Y-m-d H:i:s') : null,
+  ]);
+}
+
+/**
+ * بيلغي حركات فلوس في الدرج. لو كلها في نفس العهدة المفتوحة: الحركة وعكسها بيتعلموا "محذوف" ومش بيتجمعوا في أي مجموع
+ * (والرصيد هو هو). لو الحركة في عهدة قديمة اتقفلت: العهدة القديمة بتفضل زي ما هي (مع علامة إن الحركة اتحذفت بعدين)
+ * وبيتسجل تصحيح في العهدة المفتوحة.
+ */
+function _reverse_movements(array $mvs, string $cat, string $descr, string $reason): void {
+  $mvs = array_values(array_filter($mvs, fn($m) => (int)$m['voided'] === 0));
+  if (!$mvs) return;
+  $net = 0.0;
+  foreach ($mvs as $m) $net += $m['direction'] === 'in' ? (float)$m['amount'] : -(float)$m['amount'];
+  $net = r2($net);
+  $osid = _open_shift_for_me();
+  $same = true;
+  foreach ($mvs as $m) {
+    $sid = $m['shift_id'] === null ? null : (int)$m['shift_id'];
+    if ($sid !== $osid || ($sid === null && $m['mv_date'] !== today())) $same = false;
+  }
+  $state = $same ? 1 : 2;
+  if (abs($net) > 0.004) {
+    ins('INSERT INTO cash_movements(mv_date, direction, amount, category, description, party, ref_type, ref_id, created_by, shift_id, voided, voided_by, voided_at, void_reason)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)', [today(), $net > 0 ? 'out' : 'in', abs($net), $cat, $descr, $mvs[0]['party'] ?? '', $mvs[0]['ref_type'], $mvs[0]['ref_id'],
+      uid(), $osid, $same ? 1 : 0, $same ? uid() : null, $same ? date('Y-m-d H:i:s') : null, $same ? $reason : '']);
+  }
+  foreach ($mvs as $m) {
+    ex('UPDATE cash_movements SET voided = ?, voided_by = ?, voided_at = NOW(6), void_reason = ? WHERE id = ?', [$state, uid(), $reason, $m['id']]);
+  }
+}
+
 function _shipitem_sold(int $siid): float {
   return (float)qv('SELECT COALESCE(SUM(l.qty), 0) FROM sale_lines l JOIN sales s ON s.id = l.sale_id WHERE l.shipment_item_id = ? AND NOT s.voided', [$siid]);
 }

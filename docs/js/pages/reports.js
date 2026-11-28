@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { esc, money, moneyT, qty, qtyT, n, icon, err, tag, date, todayISO, addDays, monthRange, emptyState, CASH_CAT, dateT, dateLong, debounce, PAY, stars, modal, busy, ok, moneyView } from '../ui.js';
+import { esc, money, moneyT, qty, qtyT, n, icon, err, tag, date, todayISO, addDays, monthRange, emptyState, CASH_CAT, dateT, dateLong, debounce, PAY, stars, modal, busy, ok, moneyView, mvCounted, voidTag } from '../ui.js';
 import { reportDoc, zimamDoc, salesDetailDoc, moneyDoc } from '../print.js';
 import { paymentModal } from './customers.js';
 
@@ -100,9 +100,9 @@ export async function render({ app, el, query }) {
       <tbody>${r.by_day.map((x) => `<tr><td>${dateLong(x.date)}</td><td class="n">${x.count}</td><td class="n ${cls}"><b>${money(x.total)}</b></td></tr>`).join('')}</tbody></table></div></div>` : ''}
     <div class="panel"><div class="ph"><h2>بالتفصيل</h2></div>${r.movements.length ? `<div class="tbl-wrap"><table class="t">
       <thead><tr><th>التاريخ</th><th>${dir === 'in' ? 'من' : 'لـ'}</th><th>النوع</th><th>البيان</th><th class="n">المبلغ</th><th>المحاسب</th></tr></thead>
-      <tbody>${r.movements.map((x) => `<tr><td>${date(x.date)} <span class="small muted">${x.time}</span></td><td><b>${esc(x.party || '—')}</b></td>
-        <td>${CASH_CAT[x.category] || x.category}</td><td class="small">${esc(x.description)}</td><td class="n ${cls}">${money(x.amount)}</td><td class="small muted">${esc(x.by || '')}</td></tr>`).join('')}</tbody>
-      <tfoot><tr><td colspan="4">الإجمالي</td><td class="n">${money(r.total)}</td><td></td></tr></tfoot></table></div>` : emptyState('مفيش حركة في الفترة دي', 'غيّر التاريخ')}</div>`;
+      <tbody>${r.movements.map((x) => `<tr class="${mvCounted(x) ? '' : 'void'}"><td>${date(x.date)} <span class="small muted">${x.time}</span></td><td><b>${esc(x.party || '—')}</b></td>
+        <td>${CASH_CAT[x.category] || x.category}</td><td class="small">${esc(x.description)}${voidTag(x)}</td><td class="n ${cls}">${money(x.amount)}</td><td class="small muted">${esc(x.by || '')}</td></tr>`).join('')}</tbody>
+      <tfoot><tr><td colspan="4">الإجمالي${r.changed ? ` <span class="small muted">— فيه ${r.changed} اتحذف أو اتعدل ومش محسوب</span>` : ''}</td><td class="n">${money(r.total)}</td><td></td></tr></tfoot></table></div>` : emptyState('مفيش حركة في الفترة دي', 'غيّر التاريخ')}</div>`;
   }
 
   // ---------- الملخص ----------

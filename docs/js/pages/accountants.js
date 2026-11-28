@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { esc, money, moneyT, qty, qtyT, n, icon, ok, err, busy, tag, date, emptyState, promptBox, PAY, CASH_CAT, UNIT } from '../ui.js';
+import { esc, money, moneyT, qty, qtyT, n, icon, ok, err, busy, tag, date, emptyState, promptBox, PAY, CASH_CAT, UNIT, mvShown, voidTag } from '../ui.js';
 import { shiftDetailDoc } from '../print.js';
 import { chainNotes } from './cash.js';
 
@@ -96,14 +96,18 @@ export async function renderShift({ app, el, params }) {
     <tbody>${d.sales.map((s) => `<tr class="click ${s.voided ? 'void' : ''}" data-sale="${s.id}"><td class="num muted">${s.time}</td><td class="num">${s.sale_no}</td>
       <td><b>${esc(s.customer)}</b></td>
       <td class="small">${s.lines.map((l) => `${esc(l.item)} ${l.unit === 'kg' ? qtyT(l.weight) + 'ك' : qtyT(l.qty) + ' ' + UNIT.count} × ${moneyT(l.price)}${l.crates ? ` + ${l.crates} ${esc(l.crate || 'صندوق')}` : ''}`).join('<br>')}</td>
-      <td>${tag(s.payment_type, PAY[s.payment_type])}${s.voided ? tag('void', 'ملغية') : ''}</td>
+      <td>${tag(s.payment_type, PAY[s.payment_type])}${s.voided ? ` <span class="vnote">${tag('void', 'اتحذفت')} <span class="small muted">${esc(s.voided_by_name || '')}${s.void_reason ? ': ' + esc(s.void_reason) : ''}</span></span>` : ''}</td>
       <td class="n">${money(s.goods)}</td><td class="n">${n(s.deposit) ? money(s.deposit) : ''}</td><td class="n"><b>${money(s.total)}</b></td><td class="n t-in">${money(s.paid)}</td></tr>`).join('')}</tbody></table></div>`
     : emptyState('مفيش فواتير', '')}</div>
   <div class="panel"><div class="ph"><h2>كل حركة الفلوس</h2></div>${d.movements.length ? `<div class="tbl-wrap"><table class="t">
     <thead><tr><th>الوقت</th><th>النوع</th><th>البيان</th><th class="n">دخل</th><th class="n">خرج</th><th>بواسطة</th></tr></thead>
-    <tbody>${d.movements.map((x) => `<tr><td class="num muted">${x.time}</td><td>${CASH_CAT[x.category] || x.category}</td><td>${esc(x.description)}</td>
+    <tbody>${mvShown(d.movements).map((x) => `<tr class="${n(x.voided) ? 'void' : ''}"><td class="num muted">${x.time}</td><td>${CASH_CAT[x.category] || x.category}</td><td>${esc(x.description)}${voidTag(x)}</td>
       <td class="n t-in">${x.direction === 'in' ? money(x.amount) : ''}</td><td class="n t-out">${x.direction === 'out' ? money(x.amount) : ''}</td><td class="small muted">${esc(x.by || '')}</td></tr>`).join('')}</tbody></table></div>`
-    : emptyState('مفيش حركة', '')}</div>`;
+    : emptyState('مفيش حركة', '')}</div>
+  ${d.change_log?.length ? `<div class="panel"><div class="ph"><h2>${icon('edit')} التعديلات والحذف في العهدة دي</h2><span class="muted small">المحذوف مش محسوب في الفلوس ولا البضاعة</span></div>
+    <div class="tbl-wrap"><table class="t"><thead><tr><th>الوقت</th><th>إيه اللي حصل</th><th>السبب</th><th>بواسطة</th></tr></thead>
+    <tbody>${d.change_log.map((c) => `<tr><td class="num muted">${timeT(c.at)}</td><td>${tag(c.action === 'void' ? 'void' : 'pending', c.action === 'void' ? 'حذف' : 'تعديل')} ${esc(c.summary)}</td>
+      <td class="small">${esc(c.reason || '')}</td><td class="small muted">${esc(c.by || '')}</td></tr>`).join('')}</tbody></table></div></div>` : ''}`;
   el.querySelectorAll('[data-sale]').forEach((r) => r.onclick = () => app.go('#/sales/' + r.dataset.sale));
   el.querySelector('#pr').onclick = () => shiftDetailDoc(d);
   const rv = el.querySelector('#rv');

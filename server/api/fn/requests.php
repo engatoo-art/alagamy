@@ -61,6 +61,7 @@ $FN['decide_change'] = function (array $p) {
   if ($ok) {
     $pl = jdec($r['payload']);
     $GLOBALS['APPROVED_RUN'] = true;
+    $GLOBALS['REQ_BY'] = $r['requested_by'];
     try {
       switch ($r['kind']) {
         case 'void_sale': $FN['void_sale'](array_merge($pl, ['id' => $r['target_id'], 'reason' => $r['reason']])); break;
@@ -69,7 +70,7 @@ $FN['decide_change'] = function (array $p) {
         case 'delete_shipment': $FN['delete_shipment'](['id' => $r['target_id']]); break;
         case 'void_payment': $FN['void_payment'](['id' => $r['target_id']]); break;
       }
-    } finally { $GLOBALS['APPROVED_RUN'] = false; }
+    } finally { $GLOBALS['APPROVED_RUN'] = false; $GLOBALS['REQ_BY'] = null; }
   }
   ex('UPDATE change_requests SET status = ?, decided_by = ?, decided_at = NOW(6), decide_note = ? WHERE id = ?',
     [$ok ? 'approved' : 'rejected', uid(), _t($p, 'note'), $r['id']]);
@@ -121,4 +122,23 @@ $FN['edit_settlement'] = function (array $p) {
     $s['id'],
   ]);
   return _get_settlement((int)$s['id']);
+};
+
+// ---------------------------------------------------------------- سجل التعديلات والحذف (ظاهر للكل)
+$FN['list_changes'] = function (array $p) {
+  _need(null);
+  $d1 = _d($p, 'from', date('Y-m-d', strtotime('-6 day'))); $d2 = _d($p, 'to');
+  $rows = q("SELECT * FROM activity_log WHERE at >= ? AND at < ? + INTERVAL 1 DAY ORDER BY id DESC LIMIT 500", [$d1, $d2]);
+  foreach ($rows as &$r) {
+    $r['by'] = _uname($r['user_id']); $r['requested_by_name'] = _uname($r['requested_by']); $r['seen_by_name'] = _uname($r['seen_by']);
+    $r['by_admin'] = (bool)qv("SELECT role = 'admin' FROM profiles WHERE id = ?", [$r['user_id']]);
+    unset($r['user_id'], $r['requested_by'], $r['seen_by']);
+  }
+  return ['from' => $d1, 'to' => $d2, 'rows' => $rows];
+};
+// المدير بيعلّم إنه شاف اللي المحاسبين عدلوه أو حذفوه
+$FN['mark_changes_seen'] = function (array $p) {
+  _need('approve');
+  ex('UPDATE activity_log SET seen_by = ?, seen_at = NOW(6) WHERE seen_at IS NULL', [uid()]);
+  return ['ok' => true];
 };

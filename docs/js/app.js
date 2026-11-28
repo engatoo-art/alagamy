@@ -9,6 +9,7 @@ import * as sup from './pages/suppliers.js';
 import * as cash from './pages/cash.js';
 import * as outPage from './pages/out.js';
 import * as inPage from './pages/in.js';
+import * as changesPage from './pages/changes.js';
 import * as appr from './pages/approvals.js';
 import * as rep from './pages/reports.js';
 import * as set from './pages/settings.js';
@@ -25,6 +26,7 @@ export const app = {
     Object.assign(app, { me: b.me, settings: b.settings, crate_types: b.crate_types || [], items: b.items || [] });
     return b;
   },
+  setChanges(nr) { app.changes = nr; const el = document.querySelector('[data-changes]'); if (el) { el.textContent = nr; el.classList.toggle('hidden', !nr); } },
   setPending(nr) { app.pending = nr; const el = document.querySelector('[data-pending]'); if (el) { el.textContent = nr; el.classList.toggle('hidden', !nr); } },
 };
 
@@ -54,6 +56,7 @@ const ROUTES = [
   [/^\/in$/, inPage.render, ['collections', 'cash', 'reports']],
   [/^\/out$/, outPage.render, ['cash', 'reports']],
   [/^\/approvals$/, appr.render, 'approve'],
+  [/^\/changes$/, changesPage.render],
   [/^\/reports$/, rep.render, 'reports'],
   [/^\/debts$/, rep.renderDebts, ['reports', 'collections', 'customers']],
   [/^\/settings$/, set.render, ['settings', 'users', 'backup']],
@@ -78,6 +81,7 @@ const NAV = [
   ['out', 'الخارج', 'expense', ['cash', 'reports']],
   ['accountants', 'المحاسبين', 'users', ['approve', 'reports', 'cash']],
   ['approvals', 'الموافقات', 'approve', 'approve'],
+  ['changes', 'التعديلات والحذف', 'edit'],
   ['reports', 'التقارير', 'chart', 'reports'],
   ['settings', 'الإعدادات', 'gear', ['settings', 'users', 'backup']],
 ];
@@ -94,7 +98,7 @@ function shell() {
         if (x.grp) return `<div class="grp">${esc(x.grp)}</div>`;
         const [path, label, ic, perm] = x;
         if (!allowed(perm)) return '';
-        const pill = path === 'approvals' ? `<span class="pill hidden" data-pending>0</span>` : '';
+        const pill = path === 'approvals' ? `<span class="pill hidden" data-pending>0</span>` : path === 'changes' ? `<span class="pill hidden" data-changes>0</span>` : '';
         return `<a href="#/${path}" data-nav="${path}">${icon(ic)}<span>${esc(label)}</span>${pill}</a>`;
       }).join('')}</nav>
       <div class="me">
@@ -118,6 +122,7 @@ function shell() {
   document.querySelector('[data-more]').onclick = () => document.getElementById('side').classList.toggle('open');
   document.getElementById('side').addEventListener('click', (e) => { if (e.target.closest('a')) e.currentTarget.classList.remove('open'); });
   app.setPending(app.pending);
+  app.setChanges(app.changes || 0);
 }
 
 let routeToken = 0;
@@ -169,7 +174,7 @@ export async function start() {
     autoBackup(app);
     if (!window.__backupTimer) window.__backupTimer = setInterval(() => autoBackup(app), 60 * 60 * 1000);
     if (app.can('approve')) {
-      api.rpc('dashboard').then((d) => app.setPending(d.pending)).catch(() => {});
+      api.rpc('dashboard').then((d) => { app.setPending(d.pending); app.setChanges(d.changes_unseen || 0); }).catch(() => {});
     }
   } catch (e) {
     if (/تسجل دخول|الجلسة|غير موجود/.test(e.message)) { await api.logout(); return login.render(start); }

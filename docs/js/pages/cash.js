@@ -1,6 +1,6 @@
 import { api } from '../api.js';
 import {
-  esc, money, moneyT, n, icon, ok, err, busy, modal, formData, todayISO, addDays, dateLong, emptyState, CASH_CAT,
+  esc, money, moneyT, n, icon, ok, err, busy, modal, formData, todayISO, addDays, dateLong, emptyState, CASH_CAT, mvShown, voidTag,
   confirmBox, date, tag, monthRange, toast,
 } from '../ui.js';
 import { cashDoc, shiftDoc } from '../print.js';
@@ -225,8 +225,8 @@ export async function render({ app, el, query }) {
   function movementsPanel(list, title, cd) {
     return `<div class="panel"><div class="ph"><h2>${title}</h2></div>${list.length ? `<div class="tbl-wrap"><table class="t">
       <thead><tr><th>الوقت</th><th>النوع</th><th>البيان</th><th class="n">دخل</th><th class="n">خرج</th><th>المحاسب</th></tr></thead>
-      <tbody>${list.map((x) => `<tr ${x.ref_type === 'sale' ? `class="click" data-go="#/sales/${x.ref_id}"` : x.ref_type === 'settlement' ? `class="click" data-go="#/settlements/${x.ref_id}"` : ''}>
-        <td class="num muted">${x.time}</td><td>${CASH_CAT[x.category] || x.category}</td><td>${esc(x.description)}</td>
+      <tbody>${mvShown(list).map((x) => `<tr class="${n(x.voided) ? 'void' : ''} ${x.ref_type === 'sale' || x.ref_type === 'settlement' ? 'click' : ''}" ${x.ref_type === 'sale' ? `data-go="#/sales/${x.ref_id}"` : x.ref_type === 'settlement' ? `data-go="#/settlements/${x.ref_id}"` : ''}>
+        <td class="num muted">${x.time}</td><td>${CASH_CAT[x.category] || x.category}</td><td>${esc(x.description)}${voidTag(x)}</td>
         <td class="n t-in">${x.direction === 'in' ? money(x.amount) : ''}</td><td class="n t-out">${x.direction === 'out' ? money(x.amount) : ''}</td>
         <td class="small muted">${esc(x.by || '')}</td></tr>`).join('')}</tbody>
       ${cd ? `<tfoot><tr><td colspan="3">الإجمالي</td><td class="n">${money(cd.total_in)}</td><td class="n">${money(cd.total_out)}</td><td></td></tr></tfoot>` : ''}</table></div>`

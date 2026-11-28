@@ -128,7 +128,7 @@ cd2 = call(acc, "cash_day", {})
 assert float(cd2["closing"]) == expected - float(stl["net_amount"])
 ok("المدير وافق والمحاسب صرف، والمبلغ اتخصم من العهدة")
 
-expect_error(acc, "void_sale", {"id": s1["sale"]["id"]}, "صلاحية")
+expect_error(acc, "void_sale", {"id": s1["sale"]["id"]}, "تصفية" if PHP else "صلاحية")
 expect_error(admin, "void_sale", {"id": s1["sale"]["id"]}, "تصفية")
 
 # تقارير
@@ -196,7 +196,7 @@ stock = {x["item"]: x for x in call(acc, "list_stock") if x["shipment_id"] == sh
 assert stock["جوافة"]["remaining"] == 30 and stock["ليمون"]["supplier"] == "الحاج محمود"
 s3 = call(mate, "create_sale", {"customer_id": cash_c["id"], "payment_type": "cash", "lines": [
     {"shipment_item_id": stock["جوافة"]["shipment_item_id"], "unit": "kg", "qty": 4, "weight": 80, "price": 10}]})
-expect_error(acc, "edit_sale", {"id": s3["sale"]["id"]}, "صلاحية")
+expect_error(acc, "edit_sale", {"id": s3["sale"]["id"]}, "المدير" if PHP else "صلاحية")
 line_id = s3["lines"][0]["id"]
 rq = call(acc, "request_change", {"kind": "edit_sale", "target_id": s3["sale"]["id"], "reason": "السعر غلط",
                                   "payload": {"lines": [{"id": line_id, "price": 12}]}})
@@ -385,5 +385,59 @@ if PHP:
     call(newacc, "change_my_password", {"current": PASSWORDS[newacc][1], "password": "mona-new-2026"})
     assert http("login", {"username": "salma", "password": "mona-new-2026"})["token"]
     ok("كل مستخدم بيعدل الإيميل والموبايل وكلمة السر بتاعته بنفسه (بكلمة السر الحالية)")
+
+if PHP:
+    # ===== تعديل وحذف مباشر (المدير أو المحاسب في عهدته) — بيبان إنه اتحذف ومش بيتجمع =====
+    call(admin, "save_user", {"id": newacc, "perms": {"sales": True, "cash": True, "collections": True, "customers": True}})
+    if call(admin, "current_shift").get("shift"):
+        call(admin, "close_shift", {})
+    call(newacc, "open_shift")
+    shx = call(admin, "save_shipment", {"supplier_id": sup["id"], "items": [{"item_name": "مانجو", "qty": 10}]})
+    st = [x for x in call(admin, "list_stock") if x["shipment_id"] == shx["id"]][0]
+    base = call(newacc, "current_shift")["shift"]
+    sx = call(newacc, "create_sale", {"customer_id": cash_c["id"], "payment_type": "cash", "lines": [
+        {"shipment_item_id": st["shipment_item_id"], "unit": "kg", "qty": 2, "weight": 20, "price": 10}]})
+    assert float(call(newacc, "current_shift")["shift"]["live_in"]) == float(base["live_in"]) + 200
+    assert call(newacc, "get_sale", {"id": sx["sale"]["id"]})["can_change"] is True
+    expect_error(newacc, "void_sale", {"id": sx["sale"]["id"]}, "سبب")
+    call(newacc, "void_sale", {"id": sx["sale"]["id"], "reason": "الزبون رجع وقال مش محتاجها"})
+    after = call(newacc, "current_shift")["shift"]
+    assert float(after["live_in"]) == float(base["live_in"]) and float(after["live_out"]) == float(base["live_out"]), (base, after)
+    assert [x for x in call(admin, "list_stock") if x["shipment_item_id"] == st["shipment_item_id"]][0]["remaining"] == 10
+    det = call(admin, "shift_detail", {"id": after["id"]})
+    vs = [x for x in det["sales"] if x["id"] == sx["sale"]["id"]][0]
+    assert vs["voided"] and "مش محتاجها" in vs["void_reason"] and any(c["target"] == "sale" for c in det["change_log"])
+    mvs = call(admin, "report_money", {"direction": "in"})
+    assert any(m["ref_type"] == "sale" and m["ref_id"] == sx["sale"]["id"] and m["voided"] == 1 for m in mvs["movements"])
+    ok("المحاسب حذف فاتورته: البضاعة رجعت، الفلوس مش متجمعة في العهدة، والفاتورة ظاهرة إنها اتحذفت مع السبب")
+    py = call(newacc, "add_payment", {"customer_id": cash_c["id"], "amount": 50})
+    call(newacc, "edit_payment", {"id": py["id"], "amount": 70, "reason": "المبلغ غلط"})
+    newpay = [m for m in call(admin, "report_money", {"direction": "in"})["movements"] if m["ref_type"] == "payment" and m["voided"] == 0 and float(m["amount"]) == 70]
+    assert newpay, "edited payment missing"
+    call(newacc, "void_payment", {"id": newpay[-1]["ref_id"], "reason": "اتسجلت بالغلط"})
+    a2 = call(newacc, "current_shift")["shift"]
+    assert float(a2["live_in"]) == float(base["live_in"]), a2
+    o = call(newacc, "add_cash", {"direction": "out", "category": "transport", "amount": 30, "description": "نقل"})
+    e2 = call(newacc, "edit_cash", {"id": o["id"], "amount": 40, "reason": "كانت 40"})
+    expect_error(newacc, "edit_cash", {"id": o["id"], "amount": 50, "reason": "x"}, "قبل كده")
+    assert float(call(newacc, "current_shift")["shift"]["live_out"]) == float(base["live_out"]) + 40
+    call(newacc, "void_cash", {"id": e2["id"], "reason": "مكانتش"})
+    assert float(call(newacc, "current_shift")["shift"]["live_out"]) == float(base["live_out"])
+    adm = call(admin, "add_cash", {"direction": "out", "category": "bill", "amount": 10, "description": "كهربا"})
+    expect_error(newacc, "void_cash", {"id": adm["id"], "reason": "x"}, "المدير")
+    call(admin, "void_cash", {"id": adm["id"], "reason": "اتسجلت مرتين"})
+    outs = call(admin, "report_money", {"direction": "out"})
+    assert not any(m["id"] == adm["id"] and m["voided"] == 0 for m in outs["movements"])
+    ok("التحصيل والخارج: تعديل وحذف من المحاسب (في عهدته بس) ومن المدير، والعهدة مش بتتأثر بالمحذوف")
+    ch = call(newacc, "list_changes", {})
+    assert len([r for r in ch["rows"] if r["by"] == "سلمى"]) >= 5 and any(r["by_admin"] for r in ch["rows"])
+    assert call(admin, "dashboard")["changes_unseen"] >= 5
+    call(admin, "mark_changes_seen", {})
+    assert call(admin, "dashboard")["changes_unseen"] == 0
+    fin = call(newacc, "current_shift")["shift"]
+    exp2 = float(fin["opening_amount"]) + float(fin["live_in"]) - float(fin["live_out"])
+    cl = call(newacc, "close_shift", {"counted": exp2})
+    assert abs(float(cl["difference"])) < 0.01, cl
+    ok("سجل التعديلات ظاهر للكل، والمدير بيعلّم إنه شافه، والعهدة بتتقفل من غير عجز")
 
 print("\nكل الاختبارات نجحت ✔")

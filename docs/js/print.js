@@ -387,8 +387,9 @@ export function moneyDoc(r, s) {
       <tbody>${r.by_day.map((x) => `<tr><td>${dateLong(x.date)}</td><td>${x.count}</td><td>${m(x.total)}</td></tr>`).join('')}</tbody></table>` : ''}
     <h2>بالتفصيل</h2>
     <table class="d"><thead><tr><th>التاريخ</th><th>${isIn ? 'من' : 'لـ'}</th><th>النوع</th><th>البيان</th><th>المبلغ</th></tr></thead>
-    <tbody>${r.movements.map((x) => `<tr><td>${dateT(x.date)} ${x.time}</td><td>${esc(x.party || '')}</td><td>${CASH_CAT[x.category] || x.category}</td>
-      <td>${esc(x.description)}</td><td>${m(x.amount)}</td></tr>`).join('')}</tbody>
+    <tbody>${r.movements.map((x) => { const off = n(x.voided) !== 0; const ed = /^اتعدل/.test(x.void_reason || '');
+      return `<tr style="${off ? 'color:#888;text-decoration:line-through' : ''}"><td>${dateT(x.date)} ${x.time}</td><td>${esc(x.party || '')}</td><td>${CASH_CAT[x.category] || x.category}</td>
+      <td>${esc(x.description)}${off ? `<span style="display:inline-block;text-decoration:none;font-weight:700;color:#b03"> (${ed ? 'اتعدل' : 'اتحذف'}${x.voided_by_name ? ' — ' + esc(x.voided_by_name) : ''})</span>` : ''}</td><td>${m(x.amount)}</td></tr>`; }).join('')}</tbody>
     <tfoot><tr><td colspan="4">الإجمالي</td><td>${m(r.total)}</td></tr></tfoot></table>
     <div class="sign"><div>المحاسب</div><div>المدير</div><div></div></div></div>`, { size: 'A4', title: r.title || (isIn ? 'الفلوس اللي دخلت' : 'الفلوس اللي خرجت') });
 }

@@ -4,6 +4,7 @@ import { esc, money, icon, dateLong, n, tag, PAY, emptyState, dateT } from '../u
 export async function render({ app, el }) {
   const [d, cs] = await Promise.all([api.rpc('dashboard'), api.rpc('current_shift')]);
   app.setPending(d.pending);
+  app.setChanges(d.changes_unseen || 0);
   const max = Math.max(1, ...d.week.map((w) => n(w.total)));
   const lastBackup = localStorage.getItem('last_backup');
   const needBackup = app.can('backup') && (!lastBackup || (Date.now() - Number(lastBackup)) > 7 * 864e5);
@@ -20,6 +21,7 @@ export async function render({ app, el }) {
       : `<div class="alert info" style="margin-bottom:14px">العهدة مفتوحة باسم <b>${esc(cs.shift.user_name)}</b>. <a href="#/cash">العهدة</a></div>`)
     : `<div class="alert warn" style="margin-bottom:14px">مفيش عهدة مفتوحة. أي محاسب هيبيع نقدي أو يحصّل لازم يفتح عهدته الأول. <a href="#/cash">افتح العهدة</a></div>`}
   ${d.pending ? `<div class="alert warn" style="margin-bottom:14px">فيه <b>${d.pending}</b> طلب مستني موافقتك. <a href="#/approvals">افتح الموافقات</a></div>` : ''}
+  ${d.changes_today ? `<div class="alert ${d.changes_unseen ? 'warn' : 'info'}" style="margin-bottom:14px">${icon('edit')} فيه <b>${d.changes_today}</b> تعديل أو حذف النهارده${d.changes_unseen ? ` (<b>${d.changes_unseen}</b> لسه ماشفتهمش)` : ''}. <a href="#/changes">شوف التعديلات والحذف</a></div>` : ''}
   ${needBackup ? `<div class="alert info" style="margin-bottom:14px">بقالك أكتر من أسبوع من غير نسخة احتياطية Excel. <a href="#/settings?tab=backup">نزّل نسخة دلوقتي</a></div>` : ''}
 
   <div class="tiles">

@@ -455,3 +455,8 @@ body {
 /* حساب محمي: باين بشكل باهت ومن غير زراير تعديل */
 tr.locked td { opacity: .5; }
 tr.locked td:last-child { opacity: .85; }
+/* المحذوف والمتعدل: باين بشكل باهت ومشطوب، والعلامة نفسها واضحة */
+table.t tr.void td .vnote { display: inline-block; text-decoration: none; }
+table.t tr.void td .vnote .tag { opacity: 1; }
+.row-acts { white-space: nowrap; }
+.row-acts .btn { padding: 3px 8px; }

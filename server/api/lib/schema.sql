@@ -279,6 +279,10 @@ CREATE TABLE IF NOT EXISTS cash_movements (
   ref_id INT NULL,
   created_by CHAR(36) NULL,
   shift_id INT NULL,
+  voided TINYINT NOT NULL DEFAULT 0,
+  voided_by CHAR(36) NULL,
+  voided_at DATETIME(6) NULL,
+  void_reason VARCHAR(1000) NOT NULL DEFAULT '',
   INDEX ix_cash_date (mv_date),
   INDEX ix_cash_shift (shift_id),
   INDEX ix_cash_ref (ref_type, ref_id)
@@ -310,4 +314,22 @@ CREATE TABLE IF NOT EXISTS change_requests (
   decided_by CHAR(36) NULL,
   decided_at DATETIME(6) NULL,
   decide_note VARCHAR(1000) NOT NULL DEFAULT ''
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- سجل التعديلات والحذف: أي حذف أو تعديل بعد الحفظ بيتسجل هنا وبيبان للمدير والمحاسبين
+CREATE TABLE IF NOT EXISTS activity_log (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  at DATETIME(6) NOT NULL DEFAULT CURRENT_TIMESTAMP(6),
+  user_id CHAR(36) NULL,
+  requested_by CHAR(36) NULL,
+  action VARCHAR(10) NOT NULL,
+  target VARCHAR(20) NOT NULL,
+  target_id INT NULL,
+  summary VARCHAR(1000) NOT NULL DEFAULT '',
+  amount DECIMAL(14,2) NOT NULL DEFAULT 0,
+  reason VARCHAR(1000) NOT NULL DEFAULT '',
+  seen_by CHAR(36) NULL,
+  seen_at DATETIME(6) NULL,
+  INDEX ix_log_at (at),
+  INDEX ix_log_target (target, target_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

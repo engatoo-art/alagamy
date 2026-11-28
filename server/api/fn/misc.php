@@ -36,6 +36,7 @@ $FN['void_advance'] = function (array $p) {
   if (_advance_balance((int)$a['supplier_id']) - $a['amount'] < -0.005) fail('اتخصم من المقدم ده في فواتير، مينفعش يتلغي');
   $sup = qv('SELECT name FROM suppliers WHERE id = ?', [$a['supplier_id']]);
   ex('UPDATE supplier_advances SET voided = 1 WHERE id = ?', [$a['id']]);
+  _log('void', 'advance', (int)$a['id'], 'حذف مقدم لـ ' . $sup . ' — ' . fmtn($a['amount']), $a['amount'], _t($p, 'reason'));
   _cash('in', $a['amount'], 'advance_return', 'إلغاء مقدم لـ ' . $sup . ' (رجع الدرج)', $sup, 'advance', (int)$a['id']);
   return ['ok' => true, 'balance' => _advance_balance((int)$a['supplier_id'])];
 };
@@ -87,17 +88,21 @@ function _shift_detail(?int $id): array {
   $args = [$sh['user_id'], $raw['o'], $raw['c']];
   $sales = q("SELECT s.id, s.sale_no, DATE_FORMAT(s.created_at, '%H:%i') AS time, COALESCE(c.name, NULLIF(s.customer_name, ''), 'زبون نقدي') AS customer,
       s.payment_type, s.goods_total AS goods, s.deposit_total AS deposit, s.discount, s.grand_total AS total, s.paid_amount AS paid,
-      s.voided, s.approval_status AS approval
+      s.voided, s.void_reason, s.voided_by, s.approval_status AS approval
     FROM sales s LEFT JOIN customers c ON c.id = s.customer_id
     WHERE s.created_by = ? AND s.created_at BETWEEN ? AND ? ORDER BY s.created_at, s.id", $args);
-  foreach ($sales as &$s) $s['lines'] = _sale_lines_json((int)$s['id']);
+  foreach ($sales as &$s) { $s['lines'] = _sale_lines_json((int)$s['id']); $s['voided_by_name'] = _uname($s['voided_by']); unset($s['voided_by']); }
+  unset($s);
+  $changes = q("SELECT id, at, user_id, action, target, target_id, summary, amount, reason FROM activity_log WHERE at BETWEEN ? AND ? ORDER BY id", [$raw['o'], $raw['c']]);
+  foreach ($changes as &$c) { $c['by'] = _uname($c['user_id']); unset($c['user_id']); }
+  unset($c);
   $tot = q1("SELECT COUNT(*) count, COALESCE(SUM(goods_total), 0) goods, COALESCE(SUM(deposit_total), 0) deposit, COALESCE(SUM(grand_total), 0) total,
       COALESCE(SUM(paid_amount), 0) cash, COALESCE(SUM(grand_total - paid_amount), 0) credit FROM sales WHERE $w AND NOT voided", $args);
   $tot['crates'] = (int)qv("SELECT COALESCE(SUM(l.crates), 0) FROM sale_lines l JOIN sales x ON x.id = l.sale_id
       WHERE x.created_by = ? AND x.created_at BETWEEN ? AND ? AND NOT x.voided AND l.deposit_unit > 0", $args);
   $items = q("SELECT i.name item, SUM(l.qty) qty, SUM(l.weight) weight, SUM(l.amount) amount FROM sale_lines l JOIN sales x ON x.id = l.sale_id
       JOIN items i ON i.id = l.item_id WHERE x.created_by = ? AND x.created_at BETWEEN ? AND ? AND NOT x.voided GROUP BY i.name ORDER BY amount DESC", $args);
-  return _shift_report($id) + ['reviewed_by_name' => _uname($sh['reviewed_by']), 'sales' => $sales, 'sales_totals' => $tot, 'items' => $items];
+  return _shift_report($id) + ['reviewed_by_name' => _uname($sh['reviewed_by']), 'sales' => $sales, 'sales_totals' => $tot, 'items' => $items, 'change_log' => $changes];
 }
 $FN['shift_detail'] = function (array $p) { _need(null); return _shift_detail(_i($p, 'id')); };
 
