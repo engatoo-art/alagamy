@@ -118,7 +118,7 @@ jobs:
         run: |
           mkdir -p host && cp -r dl/site/. host/ && cp -r src/server/api host/api
           rm -f host/api/config.php
-          printf "// نسخة الاستضافة: البرنامج بيكلم api/ على نفس الموقع\nexport const CONFIG = { BACKEND: 'php', API_URL: 'api/' };\n" > host/js/config.js
+          printf "// نسخة الاستضافة: البرنامج بيكلم api/ على نفس الموقع\nexport const CONFIG = { BACKEND: 'php', API_URL: 'api/index.php' };\n" > host/js/config.js
           cp src/server/htaccess-root.txt host/.htaccess
           cp src/server/README-hosting.md host/README-hosting.md
           cd host && zip -qr ../Alagamy-hosting.zip . && cd .. && ls -la Alagamy-hosting.zip

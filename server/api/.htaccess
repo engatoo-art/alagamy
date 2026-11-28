@@ -1,5 +1,6 @@
 # ملفات البرنامج الداخلية مش بتتفتح من المتصفح
 Options -Indexes
+DirectoryIndex index.php
 <IfModule mod_rewrite.c>
   RewriteEngine On
   RewriteRule ^(lib|fn|data)/ - [F,L]
