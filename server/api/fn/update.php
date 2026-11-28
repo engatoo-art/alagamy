@@ -80,6 +80,13 @@ $FN['update_downloads'] = function (array $p) {
   return ['ok' => true, 'files' => $out];
 };
 
+// بيتنادى بعد التحديث في طلب جديد، علشان يشغّل تعديلات قاعدة البيانات من الكود الجديد نفسه
+$FN['migrate'] = function (array $p) {
+  _need_admin();
+  run_migrations();
+  return ['ok' => true, 'version' => _version()];
+};
+
 $FN['self_update'] = function (array $p) {
   _need_admin();
   if (!class_exists('ZipArchive')) fail('الاستضافة مفيهاش ZipArchive — التحديث لازم يترفع بإيدك');

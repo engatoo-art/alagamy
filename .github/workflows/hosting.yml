@@ -75,6 +75,7 @@ jobs:
           before = H.http("dashboard", {"p": {}}, tok)
           r = H.http("self_update", {"p": {}}, tok)
           assert r["ok"] and r["files"] > 50, r
+          assert H.http("migrate", {"p": {}}, tok)["ok"]
           after = H.http("dashboard", {"p": {}}, tok)
           assert before["total_debts"] == after["total_debts"] and before["sales_count"] == after["sales_count"]
           print("✔ التحديث نزل", r["files"], "ملف والبيانات زي ما هي")

@@ -243,6 +243,7 @@ async function update(app, body) {
   </div></div>`;
   body.querySelector('#upd').onclick = (e) => busy(e.currentTarget, async () => {
     const r = await api.rpc('self_update');
+    await api.rpc('migrate');
     ok(`اتحدث البرنامج (${r.files} ملف) — النسخة ${r.version}`);
     setTimeout(() => location.reload(), 1200);
   });
