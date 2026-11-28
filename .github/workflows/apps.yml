@@ -82,10 +82,11 @@ jobs:
           mkdir mobile && cd mobile
           npm init -y >/dev/null
           npm i @capacitor/core@7 @capacitor/cli@7 @capacitor/android@7 >/dev/null
-          cp -r ../docs www && rm -f www/.nojekyll
+          # التطبيق بيفتح البرنامج من الاستضافة؛ جواه بس صفحة "مفيش اتصال"
+          cp -r ../apps/android/www www
           cat > capacitor.config.json <<'JSON'
           { "appId": "com.alagamy.accounts", "appName": "العجمي", "webDir": "www",
-            "server": { "url": "https://engatoo-art.github.io/alagamy/", "errorPath": "index.html", "androidScheme": "https",
+            "server": { "url": "https://alagmy.com/shop/", "errorPath": "index.html", "androidScheme": "https",
                         "allowNavigation": ["alagmy.com", "www.alagmy.com"] },
             "android": { "backgroundColor": "#f4f6f1" } }
           JSON

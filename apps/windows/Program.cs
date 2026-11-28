@@ -1,4 +1,3 @@
-using System.Reflection;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using Microsoft.Web.WebView2.Core;
@@ -83,18 +82,25 @@ internal static class Prefs
 /// </summary>
 public class MainForm : Form
 {
-    private const string Host = "app.alagamy.local";
-    private const string Origin = "https://" + Host + "/";
     // آخر نسخة من البرنامج على النت — البرنامج بيفتحها كل مرة علشان التحديثات توصل لوحدها
-    private const string Remote = "https://engatoo-art.github.io/alagamy/";
-    private bool _fellBack;
+    // البرنامج على الاستضافة بتاعة المحل — بيتفتح كل مرة علشان التحديثات توصل لوحدها
+    private const string Remote = "https://alagmy.com/shop/";
 
     // الدومين بتاع المحل (نسخة الاستضافة) — يوم النقل اللينك القديم بيحوّل عليه لوحده
     private static readonly string[] Domains = { "https://alagmy.com/", "https://www.alagmy.com/" };
 
     private static bool Ours(string uri) =>
-        uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase) || uri.StartsWith(Remote, StringComparison.OrdinalIgnoreCase)
-        || Array.Exists(Domains, d => uri.StartsWith(d, StringComparison.OrdinalIgnoreCase));
+        Array.Exists(Domains, d => uri.StartsWith(d, StringComparison.OrdinalIgnoreCase));
+
+    // صفحة "مفيش اتصال": البرنامج مابيفتحش أي نسخة قديمة، علشان محدش يسجل في مكان غلط
+    private static readonly string OfflinePage = @"<!DOCTYPE html><html lang=""ar"" dir=""rtl""><head><meta charset=""utf-8"">
+<style>body{margin:0;height:100vh;display:flex;align-items:center;justify-content:center;background:#f2f5ef;font-family:'Segoe UI',Tahoma,sans-serif;color:#1d2a24}
+.c{text-align:center;max-width:460px;padding:30px;background:#fff;border-radius:16px;box-shadow:0 8px 28px rgba(20,60,40,.12)}
+h1{color:#17553a;margin:0 0 10px;font-size:24px}p{color:#5b6b62;line-height:1.8;margin:0 0 20px}
+button{background:#17553a;color:#fff;border:0;border-radius:10px;padding:12px 30px;font-size:17px;font-weight:700;cursor:pointer}</style></head>
+<body><div class=""c""><h1>مفيش اتصال بالإنترنت</h1><p>البرنامج محتاج نت علشان يوصل لحسابات المحل.<br>اتأكد من النت ودوس ""حاول تاني"" — وهو بيحاول لوحده كل 15 ثانية.</p>
+<button onclick=""location.href='https://alagmy.com/shop/'"">حاول تاني</button></div>
+<script>setTimeout(function(){location.href='https://alagmy.com/shop/'},15000)</script></body></html>";
     private readonly WebView2 _web = new() { Dock = DockStyle.Fill };
     private readonly string _root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Alagamy");
 
@@ -113,26 +119,6 @@ public class MainForm : Form
         Load += async (s, e) => await StartAsync();
     }
 
-    private string ExtractSite()
-    {
-        // بنطلّع الصفحات من جوه الـ exe في كل تشغيل، علشان أي نسخة جديدة تاخد مكان القديمة
-        string site = Path.Combine(_root, "site");
-        if (Directory.Exists(site)) Directory.Delete(site, true);
-        var asm = Assembly.GetExecutingAssembly();
-        foreach (var name in asm.GetManifestResourceNames())
-        {
-            if (!name.StartsWith("site/")) continue;
-            string rel = name.Substring(5).Replace('\\', '/');
-            if (rel.Contains("..")) continue;
-            string path = Path.Combine(site, rel.Replace('/', Path.DirectorySeparatorChar));
-            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
-            using var src = asm.GetManifestResourceStream(name)!;
-            using var dst = File.Create(path);
-            src.CopyTo(dst);
-        }
-        return site;
-    }
-
     private static void OpenExternal(string uri)
     {
         // بنفتح بس لينكات النت والإيميل والتليفون في برامجها — أي حاجة تانية بتترفض
@@ -147,11 +133,9 @@ public class MainForm : Form
     {
         try
         {
-            string site = ExtractSite();
             var env = await CoreWebView2Environment.CreateAsync(null, Path.Combine(_root, "webview"));
             await _web.EnsureCoreWebView2Async(env);
             var core = _web.CoreWebView2;
-            core.SetVirtualHostNameToFolderMapping(Host, site, CoreWebView2HostResourceAccessKind.Allow);
             core.Settings.AreDevToolsEnabled = false;
             core.Settings.IsStatusBarEnabled = false;
             core.Settings.AreDefaultContextMenusEnabled = true;
@@ -162,7 +146,7 @@ public class MainForm : Form
             // البرنامج مايفتحش أي صفحة غير صفحاته هو
             core.NavigationStarting += (s, e) =>
             {
-                if (Ours(e.Uri) || e.Uri == "about:blank") return;
+                if (Ours(e.Uri) || e.Uri == "about:blank" || e.Uri.StartsWith("data:text/html", StringComparison.OrdinalIgnoreCase)) return;
                 e.Cancel = true;
                 OpenExternal(e.Uri);
             };
@@ -175,18 +159,14 @@ public class MainForm : Form
             core.PermissionRequested += (s, e) => e.State = CoreWebView2PermissionState.Deny;
             core.WebMessageReceived += OnMessage;
 
-            // لو النت أو الموقع مش شغال بنفتح النسخة اللي جوه البرنامج
+            // لو النت أو الموقع مش شغال بنعرض صفحة "مفيش اتصال" وبنحاول تاني
             core.NavigationCompleted += (s, e) =>
             {
-                if (!e.IsSuccess && !_fellBack && (core.Source.StartsWith(Remote, StringComparison.OrdinalIgnoreCase)
-                    || Array.Exists(Domains, d => core.Source.StartsWith(d, StringComparison.OrdinalIgnoreCase))))
-                {
-                    _fellBack = true;
-                    core.Navigate(Origin + "index.html");
-                }
+                if (!e.IsSuccess && e.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled && Ours(core.Source))
+                    core.NavigateToString(OfflinePage);
             };
             try { await core.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.DiskCache); } catch { }
-            core.Navigate(Remote + "index.html?v=" + DateTime.UtcNow.Ticks);
+            core.Navigate(Remote + "?v=" + DateTime.UtcNow.Ticks);
         }
         catch (WebView2RuntimeNotFoundException)
         {

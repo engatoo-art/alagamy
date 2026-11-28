@@ -30,11 +30,4 @@
     <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.2592.51" />
   </ItemGroup>
 
-  <!-- صفحات البرنامج نفسها بتتحط جوه الـ exe -->
-  <ItemGroup>
-    <EmbeddedResource Include="..\..\docs\**\*" Exclude="..\..\docs\.nojekyll">
-      <LogicalName>site/%(RecursiveDir)%(Filename)%(Extension)</LogicalName>
-    </EmbeddedResource>
-  </ItemGroup>
-
 </Project>
