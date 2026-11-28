@@ -1,5 +1,5 @@
 import { api } from '../api.js';
-import { esc, money, moneyT, qty, qtyT, n, icon, err, tag, date, todayISO, addDays, monthRange, emptyState, CASH_CAT, dateT, dateLong, debounce, PAY, stars, modal, busy, ok } from '../ui.js';
+import { esc, money, moneyT, qty, qtyT, n, icon, err, tag, date, todayISO, addDays, monthRange, emptyState, CASH_CAT, dateT, dateLong, debounce, PAY, stars, modal, busy, ok, moneyView } from '../ui.js';
 import { reportDoc, zimamDoc, salesDetailDoc, moneyDoc } from '../print.js';
 import { paymentModal } from './customers.js';
 
@@ -19,8 +19,8 @@ export async function render({ app, el, query }) {
   el.innerHTML = `
   <div class="page-head"><h1>التقارير</h1><a class="btn" href="#/debts">${icon('users')} المديونيات والصناديق</a></div>
   <div class="tabs" id="tabs">
-    <button data-t="sales">${icon('box')} المبيعات بالتفصيل</button><button data-t="in">${icon('money')} الفلوس اللي دخلت</button>
-    <button data-t="out">${icon('wallet')} الفلوس اللي خرجت</button><button data-t="summary">${icon('chart')} الملخص</button></div>
+    <button data-t="sales">${icon('box')} المبيعات بالتفصيل</button><button data-t="in">${icon('income')} التحصيل</button>
+    <button data-t="out">${icon('expense')} الخارج</button><button data-t="summary">${icon('chart')} الملخص</button></div>
   <div class="panel"><div class="pb row" style="align-items:flex-end">
     <div class="seg" id="pre">${Object.entries(presets).map(([k, v]) => `<button data-k="${k}">${v[0]}</button>`).join('')}</div>
     <label class="f">من<input class="in" type="date" id="f1"></label><label class="f">إلى<input class="in" type="date" id="f2"></label>
@@ -78,11 +78,11 @@ export async function render({ app, el, query }) {
 
   // ---------- الفلوس اللي دخلت / خرجت ----------
   async function drawMoney(dir) {
-    const r = data = await api.rpc('report_money', { from, to, direction: dir });
+    const r = data = moneyView(await api.rpc('report_money', { from, to, direction: dir }), dir);
     const cls = dir === 'in' ? 't-in' : 't-out';
     res.innerHTML = `
     <div class="ledger-strip" style="margin-top:18px;grid-template-columns:repeat(3,1fr)">
-      <div><div class="k">${dir === 'in' ? 'إجمالي اللي دخل' : 'إجمالي اللي خرج'}</div><div class="v ${dir === 'in' ? 'pos' : 'neg'}">${money(r.total)}</div><div class="h">${period()}</div></div>
+      <div><div class="k">${dir === 'in' ? 'إجمالي التحصيل' : 'إجمالي الخارج'}</div><div class="v ${dir === 'in' ? 'pos' : 'neg'}">${money(r.total)}</div><div class="h">${period()}</div></div>
       <div><div class="k">عدد المرات</div><div class="v">${r.count}</div></div>
       <div><div class="k">${dir === 'in' ? 'عدد اللي دفعوا' : 'عدد الجهات'}</div><div class="v">${r.by_party.length}</div></div>
     </div>

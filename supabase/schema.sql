@@ -2005,7 +2005,7 @@ create or replace function public.report_money(p jsonb default '{}'::jsonb) retu
 language plpgsql security definer set search_path = public as $$
 declare d1 date := _d(p, 'from'); d2 date := _d(p, 'to'); dir text := coalesce(nullif(_t(p, 'direction'), ''), 'in');
 begin
-  perform _need_any(array['reports','cash']);
+  perform _need_any(array['reports','cash','collections']);
   return jsonb_build_object('from', d1, 'to', d2, 'direction', dir,
     'movements', (select coalesce(jsonb_agg(jsonb_build_object(
         'date', m.mv_date, 'time', to_char(m.created_at at time zone 'Africa/Cairo', 'HH24:MI'), 'amount', m.amount,

@@ -40,7 +40,7 @@ $FN['report_sales_detail'] = function (array $p) {
 };
 
 $FN['report_money'] = function (array $p) {
-  _need_any(['reports', 'cash']);
+  _need_any(['reports', 'cash', 'collections']);
   $d1 = _d($p, 'from'); $d2 = _d($p, 'to'); $dir = _t($p, 'direction') !== '' ? _t($p, 'direction') : 'in';
   $w = 'direction = ? AND mv_date BETWEEN ? AND ?'; $a = [$dir, $d1, $d2];
   $mv = q("SELECT m.mv_date AS date, DATE_FORMAT(m.created_at, '%H:%i') AS time, m.amount, m.category, m.description, m.party, m.ref_type, m.ref_id, m.created_by

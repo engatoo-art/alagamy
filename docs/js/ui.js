@@ -51,6 +51,28 @@ export const CASH_CAT = {
   salary: 'يوميات وأجور', withdrawal: 'سحب من الدرج', other_out: 'مصروف آخر', sale_void: 'إلغاء فاتورة', payment_void: 'إلغاء دفعة',
   shift_short: 'عجز في العهدة', shift_over: 'زيادة في العهدة', sale_edit: 'تعديل فاتورة', supplier_advance: 'مقدم لعميل (عهدة)', advance_return: 'رجوع مقدم من عميل', drawer_reset: 'تصفير الدرج (المدير)',
 };
+// التحصيل = أي فلوس داخلة بمسمى (آجل قديم، تمويل، وارد آخر، رجوع مقدم) — مش البيع النقدي (ده بيبان في العهدة بالتفاصيل)
+export const IN_CATS = ['collection', 'other_in', 'funding', 'advance_return'];
+// العجز والزيادة وتصفير الدرج مش مصروفات — بيبانوا في العهدة والتقارير
+export const OUT_SKIP = ['shift_short', 'shift_over', 'drawer_reset'];
+/** بيفلتر تقرير الفلوس (report_money) ويعيد حساب المجاميع: التحصيل بس، أو الخارج من غير العجز والتصفير */
+export function moneyView(r, dir) {
+  const keep = dir === 'in' ? (x) => IN_CATS.includes(x.category) : (x) => !OUT_SKIP.includes(x.category);
+  const mv = r.movements.filter(keep);
+  const grp = (key) => {
+    const g = {};
+    mv.forEach((x) => { const k = key(x); g[k] = g[k] || { k, count: 0, total: 0 }; g[k].count++; g[k].total += n(x.amount); });
+    return Object.values(g);
+  };
+  return {
+    ...r, direction: dir, movements: mv,
+    title: dir === 'in' ? 'التحصيل' : 'الخارج',
+    total: mv.reduce((a, x) => a + n(x.amount), 0), count: mv.length,
+    by_category: grp((x) => x.category).map((x) => ({ category: x.k, count: x.count, total: x.total })).sort((a, b) => b.total - a.total),
+    by_party: grp((x) => x.party || 'بدون اسم').map((x) => ({ party: x.k, count: x.count, total: x.total })).sort((a, b) => b.total - a.total),
+    by_day: grp((x) => x.date).map((x) => ({ date: x.k, count: x.count, total: x.total })).sort((a, b) => (a.date < b.date ? -1 : 1)),
+  };
+}
 export const PERMS = [
   ['sales', 'البيع وعمل الفواتير'],
   ['customers', 'إضافة وتعديل الزباين'],
@@ -245,6 +267,8 @@ const P = {
   menu: '<path d="M4 6h16"/><path d="M4 12h16"/><path d="M4 18h16"/>',
   download: '<path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><path d="m7 10 5 5 5-5"/><path d="M12 15V3"/>',
   back: '<path d="m9 18 6-6-6-6"/>',
+  income: '<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/>',
+  expense: '<path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M5 21h14"/>',
   money: '<rect width="20" height="12" x="2" y="6" rx="2"/><circle cx="12" cy="12" r="2"/><path d="M6 12h.01M18 12h.01"/>',
   crate: '<rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/>',
   edit: '<path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/><path d="m15 5 4 4"/>',

@@ -376,7 +376,7 @@ export function salesDetailDoc(r, s) {
 export function moneyDoc(r, s) {
   const isIn = r.direction === 'in';
   const period = r.from === r.to ? dateLong(r.from) : `من ${dateT(r.from)} إلى ${dateT(r.to)}`;
-  printDoc(`<div class="a4">${headA4(s, isIn ? 'تقرير الفلوس اللي دخلت' : 'تقرير الفلوس اللي خرجت', null, period)}
+  printDoc(`<div class="a4">${headA4(s, r.title ? 'تقرير ' + r.title : (isIn ? 'تقرير الفلوس اللي دخلت' : 'تقرير الفلوس اللي خرجت'), null, period)}
     <div class="grid" style="grid-template-columns:repeat(3,1fr)"><div><small>الإجمالي</small><b>${m(r.total)}</b></div>
       <div><small>عدد المرات</small><b>${r.count}</b></div><div><small>${isIn ? 'عدد اللي دفعوا' : 'عدد الجهات'}</small><b>${r.by_party.length}</b></div></div>
     <h2>${isIn ? 'دخلت من مين' : 'خرجت لمين'}</h2>
@@ -390,7 +390,7 @@ export function moneyDoc(r, s) {
     <tbody>${r.movements.map((x) => `<tr><td>${dateT(x.date)} ${x.time}</td><td>${esc(x.party || '')}</td><td>${CASH_CAT[x.category] || x.category}</td>
       <td>${esc(x.description)}</td><td>${m(x.amount)}</td></tr>`).join('')}</tbody>
     <tfoot><tr><td colspan="4">الإجمالي</td><td>${m(r.total)}</td></tr></tfoot></table>
-    <div class="sign"><div>المحاسب</div><div>المدير</div><div></div></div></div>`, { size: 'A4', title: isIn ? 'الفلوس اللي دخلت' : 'الفلوس اللي خرجت' });
+    <div class="sign"><div>المحاسب</div><div>المدير</div><div></div></div></div>`, { size: 'A4', title: r.title || (isIn ? 'الفلوس اللي دخلت' : 'الفلوس اللي خرجت') });
 }
 
 export function zimamDoc(list, f, s) {

@@ -1,6 +1,6 @@
 // الخارج: تسجيل مصروف من الدرج على طول + كل اللي خرج النهارده (أو في أي فترة)
 import { api } from '../api.js';
-import { esc, money, moneyT, n, icon, ok, err, busy, formData, todayISO, dateLong, dateT, emptyState, CASH_CAT } from '../ui.js';
+import { esc, money, moneyT, n, icon, ok, err, busy, formData, todayISO, dateLong, dateT, emptyState, CASH_CAT, moneyView } from '../ui.js';
 import { moneyDoc } from '../print.js';
 
 const OUT_CATS = ['transport', 'bill', 'salary', 'withdrawal', 'other_out'];
@@ -50,16 +50,7 @@ export async function render({ app, el, query }) {
 
   let data = null;
   const load = async () => {
-    data = await api.rpc('report_money', { direction: 'out', from, to });
-    // العجز وتصفير الدرج مش مصروفات — بيبانوا في العهدة والتقارير
-    const skip = ['shift_short', 'shift_over', 'drawer_reset'];
-    data.movements = data.movements.filter((x) => !skip.includes(x.category));
-    data.by_category = data.by_category.filter((x) => !skip.includes(x.category));
-    data.total = data.movements.reduce((a, x) => a + n(x.amount), 0);
-    data.count = data.movements.length;
-    const parties = {};
-    data.movements.forEach((x) => { const k = x.party || 'بدون اسم'; parties[k] = parties[k] || { party: k, count: 0, total: 0 }; parties[k].count++; parties[k].total += n(x.amount); });
-    data.by_party = Object.values(parties).sort((a, b) => b.total - a.total);
+    data = moneyView(await api.rpc('report_money', { direction: 'out', from, to }), 'out');
     const period = from === to ? dateLong(from) : `من ${dateT(from)} إلى ${dateT(to)}`;
     el.querySelector('#sum').innerHTML = `<div class="ph"><h2>الإجمالي</h2><span class="muted small">${period}</span></div><div class="pb">
       <div class="grand num t-out" style="margin-bottom:10px">${moneyT(data.total)}</div>

@@ -8,6 +8,7 @@ import * as cust from './pages/customers.js';
 import * as sup from './pages/suppliers.js';
 import * as cash from './pages/cash.js';
 import * as outPage from './pages/out.js';
+import * as inPage from './pages/in.js';
 import * as appr from './pages/approvals.js';
 import * as rep from './pages/reports.js';
 import * as set from './pages/settings.js';
@@ -50,6 +51,7 @@ const ROUTES = [
   [/^\/settlements\/new$/, sup.renderSettlementNew, 'settlements'],
   [/^\/settlements\/(\d+)$/, sup.renderSettlement],
   [/^\/cash$/, cash.render, ['cash', 'reports', 'sales', 'collections', 'payouts']],
+  [/^\/in$/, inPage.render, ['collections', 'cash', 'reports']],
   [/^\/out$/, outPage.render, ['cash', 'reports']],
   [/^\/approvals$/, appr.render, 'approve'],
   [/^\/reports$/, rep.render, 'reports'],
@@ -72,7 +74,8 @@ const NAV = [
   ['settlements', 'فواتير الموردين', 'scale'],
   { grp: 'الفلوس والإدارة' },
   ['cash', 'العهدة', 'wallet', ['cash', 'reports', 'sales', 'collections', 'payouts']],
-  ['out', 'الخارج', 'money', ['cash', 'reports']],
+  ['in', 'التحصيل', 'income', ['collections', 'cash', 'reports']],
+  ['out', 'الخارج', 'expense', ['cash', 'reports']],
   ['accountants', 'المحاسبين', 'users', ['approve', 'reports', 'cash']],
   ['approvals', 'الموافقات', 'approve', 'approve'],
   ['reports', 'التقارير', 'chart', 'reports'],
