@@ -103,7 +103,7 @@ jobs:
           BACKEND=php PHP_URL=http://127.0.0.1:8098/api/ MYSQL_DB=app2 python3 dev/compare.py check out admin-pass-2026
           cp -r server /tmp/srv3 && php -S 127.0.0.1:8096 -t /tmp/srv3 > /dev/null 2>&1 &
           sleep 1
-          curl -s -F db_name=x -F db_user=x -F admin_user=admin -F admin_pass=12345678 -F admin_pass2=12345678 http://127.0.0.1:8096/api/install.php | grep -q "شهادة الأمان"
+          curl -s -H "Host: alagmy.com" -F db_name=x -F db_user=x -F admin_user=admin -F admin_pass=12345678 -F admin_pass2=12345678 http://127.0.0.1:8096/api/install.php | grep -q "شهادة الأمان"
           test ! -f /tmp/srv3/api/config.php
           echo "✔ التسطيب مش بيكمل من غير https"
 
