@@ -13,12 +13,13 @@ $msg = ''; $ok = false; $done = [];
 
 function h($s): string { return htmlspecialchars((string)$s, ENT_QUOTES, 'UTF-8'); }
 
+$https = (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off') || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https') || getenv('ALAGAMY_ALLOW_HTTP');
 $phpOk = version_compare(PHP_VERSION, '8.0.0', '>=');
 $extOk = extension_loaded('pdo_mysql');
 
 if (file_exists($lock)) {
   $msg = 'البرنامج متسطب بالفعل. علشان الأمان امسح ملف install.php من الاستضافة.';
-} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && $phpOk && $extOk) {
+} elseif ($_SERVER['REQUEST_METHOD'] === 'POST' && $phpOk && $extOk && $https) {
   try {
     $cfg = [
       'db_host' => trim($_POST['db_host'] ?? 'localhost') ?: 'localhost',
@@ -83,6 +84,14 @@ if (file_exists($lock)) {
     }
     db()->commit();
     file_put_contents($lock, date('c'));
+    // SSL شغال (التسطيب نفسه جاي على https) — نخلي الموقع كله يتحول لـ https
+    $ht = dirname(__DIR__) . '/.htaccess';
+    if (!getenv('ALAGAMY_ALLOW_HTTP') && is_file($ht) && is_writable($ht)) {
+      $t = (string)file_get_contents($ht);
+      $t = preg_replace_callback('/# HTTPS-START\n(.*?)# HTTPS-END/s', fn($m) => "# HTTPS-START\n" . preg_replace('/^(\s*)# /m', '$1', $m[1]) . '# HTTPS-END', $t);
+      file_put_contents($ht, $t);
+      $done[] = 'الموقع بقى يفتح على https بس (آمن)';
+    }
     $ok = true;
   } catch (Throwable $e) {
     try { if (db()->inTransaction()) db()->rollBack(); } catch (Throwable $x) {}
@@ -108,7 +117,11 @@ if (file_exists($lock)) {
 </style></head><body><div class="card">
 <h1>مرحبا بك في محلات عبده العجمي</h1>
 <p class="sub">تسطيب البرنامج على الاستضافة — خطوة واحدة وكل حاجة تبقى جاهزة.</p>
-<?php if (!$phpOk || !$extOk): ?>
+<?php if (!$https && !$ok): ?>
+  <div class="err"><b>شهادة الأمان (SSL) لسه مش شغالة.</b><br>افتح الصفحة دي بـ <b>https://</b> في الأول. لو مش بتفتح:
+    cPanel ← <b>SSL/TLS Status</b> ← Run AutoSSL، واستنى شوية (ممكن ساعات لو الدومين لسه جديد) وجرب تاني.
+    التسطيب مش بيكمل من غير https علشان كلمات السر متتبعتش مكشوفة.</div>
+<?php elseif (!$phpOk || !$extOk): ?>
   <div class="err">الاستضافة محتاجة PHP 8.0 أو أحدث وفيها pdo_mysql. النسخة الحالية <?= h(PHP_VERSION) ?>. غيّرها من cPanel ← Select PHP Version.</div>
 <?php elseif ($ok): ?>
   <div class="ok"><b>التسطيب خلص بنجاح ✔</b><ul><?php foreach ($done as $d) echo '<li>' . $d . '</li>'; ?></ul></div>

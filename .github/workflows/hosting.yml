@@ -75,7 +75,7 @@ jobs:
         run: |
           mysql --default-character-set=utf8mb4 -h127.0.0.1 -uroot -proot -e "create database app2 character set utf8mb4 collate utf8mb4_unicode_ci"
           cp -r server /tmp/srv2
-          ALAGAMY_DEBUG=1 php -S 127.0.0.1:8098 -t /tmp/srv2 > /tmp/php2.log 2>&1 &
+          ALAGAMY_ALLOW_HTTP=1 ALAGAMY_DEBUG=1 php -S 127.0.0.1:8098 -t /tmp/srv2 > /tmp/php2.log 2>&1 &
           sleep 2
           curl -s -o /tmp/install.html -F db_host=127.0.0.1 -F db_port=3306 -F db_name=app2 -F db_user=root -F db_pass=root \
             -F admin_user=admin -F admin_name=المدير -F admin_pass=admin-pass-2026 -F admin_pass2=admin-pass-2026 \
@@ -85,6 +85,11 @@ jobs:
           curl -s -F db_name=x -F db_user=x http://127.0.0.1:8098/api/install.php | grep -q "متسطب بالفعل"
           echo "✔ التسطيب بيقفل نفسه بعد أول مرة"
           BACKEND=php PHP_URL=http://127.0.0.1:8098/api/ MYSQL_DB=app2 python3 dev/compare.py check out admin-pass-2026
+          cp -r server /tmp/srv3 && php -S 127.0.0.1:8096 -t /tmp/srv3 > /dev/null 2>&1 &
+          sleep 1
+          curl -s -F db_name=x -F db_user=x -F admin_user=admin -F admin_pass=12345678 -F admin_pass2=12345678 http://127.0.0.1:8096/api/install.php | grep -q "شهادة الأمان"
+          test ! -f /tmp/srv3/api/config.php
+          echo "✔ التسطيب مش بيكمل من غير https
 
       - name: سجل السيرفر (لو فيه مشكلة)
         if: failure()

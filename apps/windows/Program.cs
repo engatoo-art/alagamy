@@ -89,8 +89,12 @@ public class MainForm : Form
     private const string Remote = "https://engatoo-art.github.io/alagamy/";
     private bool _fellBack;
 
+    // الدومين بتاع المحل (نسخة الاستضافة) — يوم النقل اللينك القديم بيحوّل عليه لوحده
+    private static readonly string[] Domains = { "https://alagmy.com/", "https://www.alagmy.com/" };
+
     private static bool Ours(string uri) =>
-        uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase) || uri.StartsWith(Remote, StringComparison.OrdinalIgnoreCase);
+        uri.StartsWith(Origin, StringComparison.OrdinalIgnoreCase) || uri.StartsWith(Remote, StringComparison.OrdinalIgnoreCase)
+        || Array.Exists(Domains, d => uri.StartsWith(d, StringComparison.OrdinalIgnoreCase));
     private readonly WebView2 _web = new() { Dock = DockStyle.Fill };
     private readonly string _root = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Alagamy");
 
@@ -174,7 +178,8 @@ public class MainForm : Form
             // لو النت أو الموقع مش شغال بنفتح النسخة اللي جوه البرنامج
             core.NavigationCompleted += (s, e) =>
             {
-                if (!e.IsSuccess && !_fellBack && core.Source.StartsWith(Remote, StringComparison.OrdinalIgnoreCase))
+                if (!e.IsSuccess && !_fellBack && (core.Source.StartsWith(Remote, StringComparison.OrdinalIgnoreCase)
+                    || Array.Exists(Domains, d => core.Source.StartsWith(d, StringComparison.OrdinalIgnoreCase))))
                 {
                     _fellBack = true;
                     core.Navigate(Origin + "index.html");
